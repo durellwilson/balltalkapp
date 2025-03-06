@@ -1,0 +1,84 @@
+## Studio Feature Development Prompt
+
+**Project Goal:** Develop core studio features for a collaborative music application, enabling users to record songs, store them in Firebase, and access them on other devices.
+
+**Core Success Criteria:**
+
+1.  **Recording:** Users can record audio within the application.
+2.  **Firebase Storage:** Recorded audio is successfully stored in Firebase.
+3.  **Cross-Device Access:** Songs stored in Firebase are accessible and playable on other user's devices.
+
+**Technical Considerations:**
+
+*   **Audio Recording:**
+    *   Implement robust audio recording functionality.
+    *   Handle different audio input devices and formats.
+    *   Optimize audio quality and minimize latency.
+    *   Implement appropriate error handling for recording failures.
+*   **Firebase Integration:**
+    *   Utilize Firebase Storage for audio file storage.
+    *   Employ Firebase Authentication for user identification.
+    *   Implement secure access control for audio files.
+    *   Structure the Firebase data model for efficient retrieval.
+*   **Cross-Device Synchronization:**
+    *   Ensure seamless synchronization of audio files across devices.
+    *   Handle potential network issues and offline scenarios.
+    *   Implement efficient caching mechanisms.
+    *   Provide clear feedback to users regarding synchronization status.
+*   **Playback:**
+    *   Develop audio playback capabilities.
+    *   Support various playback controls (play, pause, stop, seek).
+    *   Handle playback interruptions and errors gracefully.
+
+**Actionable Tasks:**
+
+1.  **Audio Recording Module:**
+    *   **Task 1.1:** Implement audio recording functionality.
+    *   **Task 1.2:** Implement error handling for recording interruptions.
+    *   **Task 1.3:** Save recorded audio data temporarily.
+2.  **Firebase Integration:**
+    *   **Task 2.1:** Configure Firebase project and SDK.
+    *   **Task 2.2:** Implement user authentication.
+    *   **Task 2.3:** Implement audio file upload to Firebase Storage.
+    *   **Task 2.4:** Store metadata (e.g., title, user ID) in Firebase Database.
+    * **Task 2.5:** Create access rules in firebase to ensure only authenticated users may see the file.
+3.  **Cross-Device Access:**
+    *   **Task 3.1:** Retrieve audio file URLs from Firebase.
+    *   **Task 3.2:** Implement download functionality for audio files.
+    *   **Task 3.3:** Implement local caching of downloaded audio.
+    *   **Task 3.4:** Handle offline access to cached audio.
+    * **Task 3.5:** Sync file name with Firebase entry.
+4.  **Audio Playback:**
+    *   **Task 4.1:** Implement audio playback functionality.
+    *   **Task 4.2:** Provide playback controls.
+    *   **Task 4.3:** Implement error handling for playback failures.
+5.  **User Interface:**
+    *   **Task 5.1:** Design a simple interface for recording.
+    *   **Task 5.2:** Design a simple interface for playback.
+    * **Task 5.3:** Design a simple interface for song listing.
+
+**Testing and Validation:**
+
+1.  **Unit Tests:** Write unit tests for individual modules (recording, Firebase integration, playback).
+2.  **Integration Tests:** Test the interaction between different modules.
+3.  **End-to-End Tests:** Simulate user workflows (record, upload, access on another device).
+4.  **Device Testing:** Test on multiple devices to ensure cross-device functionality.
+5.  **Performance Testing:** Test loading times, recording latency, and memory usage.
+6. **Error Simulation:** Check error handling capabilities by simulating network or device errors.
+
+**Code Quality Guidelines:**
+
+*   **Code Style:** Follow a consistent code style guide (e.g., PEP 8, Google Java Style).
+*   **Documentation:** Write clear and concise documentation for all functions and classes.
+*   **Modularity:** Design the code with clear separation of concerns.
+*   **Reusability:** Create reusable components where possible.
+*   **Security:** Follow best practices for secure code.
+*   **Code Reviews:** Conduct regular code reviews to ensure quality.
+
+**Error Handling Guidelines:**
+
+*   **Anticipate Errors:** Identify potential errors (network issues, device failures, invalid input).
+*   **Graceful Degradation:** Handle errors gracefully without crashing the application.
+*   **User Feedback:** Provide meaningful feedback to the user when errors occur.
+*   **Logging:** Log errors for debugging purposes.
+*   **Recovery:** Implement recovery mechanisms where possible.

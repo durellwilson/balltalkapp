@@ -1,0 +1,23 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{userId} {
+      // Allow new user creation
+      allow create: if !exists(/databases/$(database)/documents/users/$(userId));
+      
+      // Allow users to read and update their own data
+      allow read, update: if request.auth != null && request.auth.uid == userId;
+      
+      // Also allow reading user data during login (even if not authenticated yet)
+      allow read: if true;
+    }
+    
+    // Default deny for all other collections
+    match /{document=**} {
+      allow read, write: if false;
+    }
+     match /songs/{songId} {
+      allow read: if true;
+    }
+  }
+}

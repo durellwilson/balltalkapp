@@ -1,0 +1,46 @@
+{
+  "project_info": {
+    "project_number": "628814403087",
+    "project_id": "balltalkbeta",
+    "storage_bucket": "balltalkbeta.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:628814403087:android:9213b5b1dd241e4c2a357a",
+        "android_client_info": {
+          "package_name": "com.balltalk.balltalkapp"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "628814403087-9t3scf519ilati8u96m73pehvb5nfl7h.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDRBBZ7uC8xUbn61vnwmxwdGuY2jvdLPIU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "628814403087-9t3scf519ilati8u96m73pehvb5nfl7h.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "628814403087-j1j0rveh4jgt5tp36jjsc7mu4p88epu8.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.balltalk.balltalkapp"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
