@@ -6,6 +6,7 @@ import {
   StyleProp,
   ViewStyle
 } from 'react-native';
+import { createShadow } from '../../utils/shadowStyles';
 
 export interface ActionButtonProps extends TouchableOpacityProps {
   style?: StyleProp<ViewStyle>;
@@ -41,11 +42,7 @@ const styles = StyleSheet.create({
     padding: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.2,
-    shadowRadius: 1.5,
+    ...createShadow(0, 1, 1.5, 0.2),
   },
   buttonDisabled: {
     opacity: 0.5,

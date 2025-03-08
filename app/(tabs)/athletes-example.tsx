@@ -104,6 +104,9 @@ export default function AthletesExample() {
           <AthleteDashboard 
             theme={theme}
             limit={3} // Only show the first 3 athletes
+            showTitle={true}
+            onNavigateToProfile={() => router.push('/athlete-profile')}
+            onNavigateToStudio={() => router.push('/studio')}
           />
         </View>
 
@@ -142,6 +145,8 @@ export default function AthletesExample() {
   theme={theme}
   limit={3} // Optional: limit the number of cards
   showTitle={true} // Optional: show section title
+  onNavigateToProfile={() => {/* navigate to profile */}}
+  onNavigateToStudio={() => {/* navigate to studio */}}
 />`}
             </Text>
           </View>

@@ -1,19 +1,7 @@
 import { Song, Playlist, SongComment } from '../models/Song';
 import { db, storage } from '../src/lib/firebase';
-import {
-  doc,
-  setDoc,
-  getDoc,
-  collection,
-  query,
-  getDocs,
-  updateDoc,
-  orderBy,
-  limit,
-  where,
-  increment, deleteDoc
-} from '@react-native-firebase/firestore';
-import { ref, uploadBytes, getDownloadURL, deleteObject } from '@react-native-firebase/storage';
+import { collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, query, where, orderBy, limit, increment } from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { v4 as uuidv4 } from 'uuid';
 
 
@@ -61,7 +49,8 @@ class SongService {
       };
 
       // Save song to Firestore
-      await setDoc(doc(db, 'songs', songId), newSong);
+      const songRef = doc(db, 'songs', songId);
+      await setDoc(songRef, newSong);
 
       return newSong;
     } catch (error) {
@@ -73,7 +62,8 @@ class SongService {
   // Get a song by ID
   async getSong(songId: string): Promise<Song | null> {
     try {
-      const songDoc = await getDoc(doc(db, 'songs', songId));
+      const songRef = doc(db, 'songs', songId);
+      const songDoc = await getDoc(songRef);
 
       if (songDoc.exists()) {
         return songDoc.data() as Song;
@@ -90,10 +80,14 @@ class SongService {
   async getSongsByArtist(artistId: string): Promise<Song[]> {
     try {
       const songsRef = collection(db, 'songs');
-      const q = query(songsRef, where('artistId', '==', artistId), orderBy('releaseDate', 'desc'));
-      const querySnapshot = await getDocs(q);
+      const q = query(
+        songsRef, 
+        where('artistId', '==', artistId),
+        orderBy('releaseDate', 'desc')
+      );
+      const songsSnapshot = await getDocs(q);
 
-      return querySnapshot.docs.map(doc => doc.data() as Song);
+      return songsSnapshot.docs.map(doc => doc.data() as Song);
     } catch (error) {
       console.error('Error getting songs by artist:', error);
       return [];
@@ -111,9 +105,9 @@ class SongService {
         orderBy('releaseDate', 'desc'),
         limit(limitCount)
       );
-      const querySnapshot = await getDocs(q);
+      const songsSnapshot = await getDocs(q);
 
-      return querySnapshot.docs.map(doc => doc.data() as Song);
+      return songsSnapshot.docs.map(doc => doc.data() as Song);
     } catch (error) {
       console.error('Error getting songs by genre:', error);
       return [];
@@ -148,7 +142,8 @@ class SongService {
   async deleteSong(songId: string, artistId: string): Promise<boolean> {
     try {
       // Get the song to check ownership and get file URLs
-      const songDoc = await getDoc(doc(db, 'songs', songId));
+      const songRef = doc(db, 'songs', songId);
+      const songDoc = await getDoc(songRef);
       if (!songDoc.exists()) {
         return false;
       }
@@ -171,7 +166,7 @@ class SongService {
       }
 
       // Delete song document
-      await deleteDoc(doc(db, 'songs', songId));
+      await deleteDoc(songRef);
 
       return true;
     } catch (error) {
@@ -183,7 +178,8 @@ class SongService {
   // Record a play for a song
   async recordPlay(songId: string): Promise<boolean> {
     try {
-      await updateDoc(doc(db, 'songs', songId), {
+      const songRef = doc(db, 'songs', songId);
+      await updateDoc(songRef, {
         playCount: increment(1)
       });
 
@@ -228,7 +224,8 @@ class SongService {
       };
 
       // Save playlist to Firestore
-      await setDoc(doc(db, 'playlists', playlistId), newPlaylist);
+      const playlistRef = doc(db, 'playlists', playlistId);
+      await setDoc(playlistRef, newPlaylist);
 
       return newPlaylist;
     } catch (error) {
@@ -241,7 +238,8 @@ class SongService {
   async addSongToPlaylist(playlistId: string, songId: string, userId: string): Promise<boolean> {
     try {
       // Get playlist to check ownership
-      const playlistDoc = await getDoc(doc(db, 'playlists', playlistId));
+      const playlistRef = doc(db, 'playlists', playlistId);
+      const playlistDoc = await getDoc(playlistRef);
       if (!playlistDoc.exists()) {
         return false;
       }
@@ -259,7 +257,7 @@ class SongService {
       }
 
       // Add song to playlist
-      await updateDoc(doc(db, 'playlists', playlistId), {
+      await updateDoc(playlistRef, {
         songs: [...playlist.songs, songId],
         updatedAt: new Date().toISOString()
       });
@@ -271,21 +269,25 @@ class SongService {
     }
   }
 
-  // Get user's playlists
+  // Get user playlists
   async getUserPlaylists(userId: string): Promise<Playlist[]> {
     try {
       const playlistsRef = collection(db, 'playlists');
-      const q = query(playlistsRef, where('userId', '==', userId));
-      const querySnapshot = await getDocs(q);
+      const q = query(
+        playlistsRef,
+        where('userId', '==', userId),
+        orderBy('updatedAt', 'desc')
+      );
+      const playlistsSnapshot = await getDocs(q);
 
-      return querySnapshot.docs.map(doc => doc.data() as Playlist);
+      return playlistsSnapshot.docs.map(doc => doc.data() as Playlist);
     } catch (error) {
       console.error('Error getting user playlists:', error);
       return [];
     }
   }
 
-  // Add comment to song
+  // Add a comment to a song
   async addComment(songId: string, userId: string, text: string): Promise<SongComment | null> {
     try {
       const commentId = uuidv4();
@@ -296,16 +298,17 @@ class SongService {
         songId,
         userId,
         text,
-        timestamp: now,
-        likes: 0
+        createdAt: now
       };
 
-      // Save comment to Firestore
-      await setDoc(doc(db, 'songComments', commentId), comment);
+      // Add comment to song's comments collection
+      const commentRef = doc(db, 'songs', songId, 'comments', commentId);
+      await setDoc(commentRef, comment);
 
-      // Increment comment count on song
-       await updateDoc(doc(db, 'songs', songId), {
-         commentCount: increment(1)
+      // Update comment count on song
+      const songRef = doc(db, 'songs', songId);
+      await updateDoc(songRef, {
+        commentCount: increment(1)
       });
 
       return comment;
@@ -318,35 +321,78 @@ class SongService {
   // Get comments for a song
   async getSongComments(songId: string): Promise<SongComment[]> {
     try {
-      const commentsRef = collection(db, 'songComments');
-      const q = query(
-        commentsRef,
-        where('songId', '==', songId),
-        orderBy('timestamp', 'desc')
-      );
-      const querySnapshot = await getDocs(q);
+      const commentsRef = collection(db, 'songs', songId, 'comments');
+      const q = query(commentsRef, orderBy('createdAt', 'desc'));
+      const commentsSnapshot = await getDocs(q);
 
-      // Validate each document before returning
-      const songComments = querySnapshot.docs.map((doc) => {
-        const data = doc.data();
-     
-        // Ensure all required fields are present
-        const validatedComment: SongComment = {
-          id: data.id || doc.id,
-          songId: data.songId || songId,
-          userId: data.userId || 'unknown',
-          text: data.text || '',
-          timestamp: data.timestamp || new Date().toISOString(),
-          likes: data.likes || 0
-        };
-
-        return validatedComment;
-      });
-
-      return songComments;
+      return commentsSnapshot.docs.map(doc => doc.data() as SongComment);
     } catch (error) {
       console.error('Error getting song comments:', error);
       return [];
+    }
+  }
+
+  // Remove a song from a playlist
+  async removeSongFromPlaylist(playlistId: string, songId: string, userId: string): Promise<boolean> {
+    try {
+      // Get playlist to check ownership
+      const playlistRef = doc(db, 'playlists', playlistId);
+      const playlistDoc = await getDoc(playlistRef);
+      if (!playlistDoc.exists()) {
+        return false;
+      }
+
+      const playlist = playlistDoc.data() as Playlist;
+
+      // Verify ownership
+      if (playlist.userId !== userId) {
+        return false;
+      }
+
+      // Remove song from playlist
+      const updatedSongs = playlist.songs.filter(id => id !== songId);
+      await updateDoc(playlistRef, {
+        songs: updatedSongs,
+        updatedAt: new Date().toISOString()
+      });
+
+      return true;
+    } catch (error) {
+      console.error('Error removing song from playlist:', error);
+      return false;
+    }
+  }
+
+  // Delete a playlist
+  async deletePlaylist(playlistId: string, userId: string): Promise<boolean> {
+    try {
+      // Get playlist to check ownership
+      const playlistRef = doc(db, 'playlists', playlistId);
+      const playlistDoc = await getDoc(playlistRef);
+      if (!playlistDoc.exists()) {
+        return false;
+      }
+
+      const playlist = playlistDoc.data() as Playlist;
+
+      // Verify ownership
+      if (playlist.userId !== userId) {
+        return false;
+      }
+
+      // Delete cover image if it exists
+      if (playlist.coverImageUrl) {
+        const coverImageRef = ref(storage, `playlists/${userId}/${playlistId}/cover.jpg`);
+        await deleteObject(coverImageRef);
+      }
+
+      // Delete playlist document
+      await deleteDoc(playlistRef);
+
+      return true;
+    } catch (error) {
+      console.error('Error deleting playlist:', error);
+      return false;
     }
   }
 }

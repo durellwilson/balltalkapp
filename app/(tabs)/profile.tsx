@@ -9,7 +9,8 @@ import {
   Dimensions,
   Linking,
   Modal,
-  Platform
+  Platform,
+  Alert
 } from 'react-native';
 import { Text, Badge, ActionButton, Card } from '../../components/themed';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -126,23 +127,59 @@ const VerificationBadge = ({ verified, size = 'small' }: { verified: boolean; si
 
 export default function ProfileScreen() {
   const { user, signOut } = useAuth();
-  const [selectedTab, setSelectedTab] = useState('All');
-  const [verificationModalVisible, setVerificationModalVisible] = useState(false);
-  const [verificationStatus, setVerificationStatus] = useState<'none' | 'pending' | 'approved' | 'rejected'>('none');
   const [isVerified, setIsVerified] = useState(false);
-  
-  // Get user verification status
+  const [showVerificationModal, setShowVerificationModal] = useState(false);
+  const [activeTab, setActiveTab] = useState('All');
+
+  // Check if user is an athlete
   useEffect(() => {
-    if (user) {
-      const fetchVerificationStatus = async () => {
-        const status = await VerificationService.getUserVerificationStatus(user.uid);
-        setVerificationStatus(status.status);
-        setIsVerified(status.isVerified);
-      };
-      
-      fetchVerificationStatus();
+    if (user && user.role === 'fan') {
+      Alert.alert(
+        'Fan Account',
+        'This section is for athlete accounts. You will be redirected to the Fan Hub.',
+        [
+          { 
+            text: 'OK', 
+            onPress: () => router.replace('/(tabs)/fan-profile') 
+          }
+        ]
+      );
     }
   }, [user]);
+
+  // Fetch verification status
+  useEffect(() => {
+    const fetchVerificationStatus = async () => {
+      if (user?.uid) {
+        try {
+          const status = await VerificationService.getVerificationStatus(user.uid);
+          setIsVerified(status.isVerified);
+        } catch (error) {
+          console.error('Error fetching verification status:', error);
+        }
+      }
+    };
+
+    fetchVerificationStatus();
+  }, [user]);
+
+  // If no user is logged in, show login prompt
+  if (!user) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.centerContent}>
+          <Text style={styles.title}>Athlete Profile</Text>
+          <Text style={styles.message}>Please sign in to access your profile</Text>
+          <TouchableOpacity 
+            style={styles.button}
+            onPress={() => router.replace('/(auth)/login')}
+          >
+            <Text style={styles.buttonText}>Sign In</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
   
   // Mock user data - in a real app, this would come from a profile service
   const mockUserData = {
@@ -162,27 +199,27 @@ export default function ProfileScreen() {
     }
   };
   
-  const filteredContent = selectedTab === 'All' 
+  const filteredContent = activeTab === 'All' 
     ? MOCK_USER_CONTENT 
     : MOCK_USER_CONTENT.filter(item => {
-        if (selectedTab === 'Music') return item.type === 'music';
-        if (selectedTab === 'Podcasts') return item.type === 'podcast';
-        if (selectedTab === 'Videos') return item.type === 'video';
-        if (selectedTab === 'Live') return item.type === 'live';
+        if (activeTab === 'Music') return item.type === 'music';
+        if (activeTab === 'Podcasts') return item.type === 'podcast';
+        if (activeTab === 'Videos') return item.type === 'video';
+        if (activeTab === 'Live') return item.type === 'live';
         return true;
       });
   
   const openVerificationModal = () => {
-    setVerificationModalVisible(true);
+    setShowVerificationModal(true);
   };
   
   const closeVerificationModal = () => {
-    setVerificationModalVisible(false);
+    setShowVerificationModal(false);
   };
   
   const handleVerificationComplete = () => {
     closeVerificationModal();
-    setVerificationStatus('pending');
+    setIsVerified(true);
   };
   
   const handleSignOut = async () => {
@@ -225,15 +262,13 @@ export default function ProfileScreen() {
                 <TouchableOpacity 
                   style={[
                     styles.verifyButton, 
-                    verificationStatus === 'pending' && styles.pendingButton
+                    showVerificationModal && styles.pendingButton
                   ]} 
                   onPress={openVerificationModal}
-                  disabled={verificationStatus === 'pending'}
+                  disabled={showVerificationModal}
                 >
                   <Text style={styles.verifyButtonText}>
-                    {verificationStatus === 'none' && 'Get Verified'}
-                    {verificationStatus === 'pending' && 'Verification Pending'}
-                    {verificationStatus === 'rejected' && 'Verification Rejected'}
+                    {showVerificationModal ? 'Verification Pending' : 'Get Verified'}
                   </Text>
                 </TouchableOpacity>
               )}
@@ -307,14 +342,14 @@ export default function ProfileScreen() {
               key={tab}
               style={[
                 styles.tabButton,
-                selectedTab === tab && styles.tabButtonActive
+                activeTab === tab && styles.tabButtonActive
               ]}
-              onPress={() => setSelectedTab(tab)}
+              onPress={() => setActiveTab(tab)}
             >
               <Text
                 style={[
                   styles.tabText,
-                  selectedTab === tab && styles.tabTextActive
+                  activeTab === tab && styles.tabTextActive
                 ]}
               >
                 {tab}
@@ -332,7 +367,7 @@ export default function ProfileScreen() {
           ) : (
             <View style={styles.emptyContentContainer}>
               <Ionicons name="albums-outline" size={48} color="#ccc" />
-              <Text style={styles.emptyContentText}>No {selectedTab} content yet</Text>
+              <Text style={styles.emptyContentText}>No {activeTab} content yet</Text>
             </View>
           )}
         </View>
@@ -340,73 +375,32 @@ export default function ProfileScreen() {
       
       {/* Verification Modal */}
       <Modal
-        visible={verificationModalVisible}
+        visible={showVerificationModal}
         animationType="slide"
         transparent={true}
         onRequestClose={closeVerificationModal}
       >
         <View style={styles.modalContainer}>
-          {verificationStatus === 'pending' ? (
-            <View style={styles.modalContent}>
-              <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>Verification Status</Text>
-                <ActionButton style={styles.closeButton} onPress={closeVerificationModal}>
-                  <Ionicons name="close" size={24} color="#666" />
-                </ActionButton>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Verification Status</Text>
+              <ActionButton style={styles.closeButton} onPress={closeVerificationModal}>
+                <Ionicons name="close" size={24} color="#666" />
+              </ActionButton>
+            </View>
+            
+            <View style={styles.modalBody}>
+              <View style={styles.verificationIconContainer}>
+                <Ionicons name="time-outline" size={60} color="#FF9500" />
               </View>
               
-              <View style={styles.modalBody}>
-                <View style={styles.verificationIconContainer}>
-                  <Ionicons name="time-outline" size={60} color="#FF9500" />
-                </View>
-                
-                <Text style={styles.verificationTitle}>Verification In Progress</Text>
-                <Text style={styles.verificationDescription}>
-                  Your verification request is currently being reviewed by our team. This process typically
-                  takes 1-3 business days. You'll be notified when the review is complete.
-                </Text>
-              </View>
+              <Text style={styles.verificationTitle}>Verification In Progress</Text>
+              <Text style={styles.verificationDescription}>
+                Your verification request is currently being reviewed by our team. This process typically
+                takes 1-3 business days. You'll be notified when the review is complete.
+              </Text>
             </View>
-          ) : verificationStatus === 'rejected' ? (
-            <View style={styles.modalContent}>
-              <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>Verification Status</Text>
-                <ActionButton style={styles.closeButton} onPress={closeVerificationModal}>
-                  <Ionicons name="close" size={24} color="#666" />
-                </ActionButton>
-              </View>
-              
-              <View style={styles.modalBody}>
-                <View style={styles.verificationIconContainer}>
-                  <Ionicons name="alert-circle" size={60} color="#FF3B30" />
-                </View>
-                
-                <Text style={styles.verificationTitle}>Verification Rejected</Text>
-                <Text style={styles.verificationDescription}>
-                  Unfortunately, your verification request was not approved. This could be due to insufficient
-                  documentation or information. You can submit a new request with additional information.
-                </Text>
-                
-                <ActionButton 
-                  style={styles.startVerificationButton}
-                  onPress={() => {
-                    setVerificationStatus('none');
-                    closeVerificationModal();
-                    setTimeout(() => {
-                      openVerificationModal();
-                    }, 500);
-                  }}
-                >
-                  <Text style={styles.startVerificationText}>Try Again</Text>
-                </ActionButton>
-              </View>
-            </View>
-          ) : (
-            <AthleteVerificationForm
-              onCancel={closeVerificationModal}
-              onComplete={handleVerificationComplete}
-            />
-          )}
+          </View>
         </View>
       </Modal>
     </SafeAreaView>
@@ -743,6 +737,31 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   startVerificationText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  centerContent: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    marginBottom: 20,
+  },
+  message: {
+    fontSize: 16,
+    color: '#666',
+    marginBottom: 20,
+  },
+  button: {
+    backgroundColor: '#007AFF',
+    padding: 15,
+    borderRadius: 12,
+  },
+  buttonText: {
     color: 'white',
     fontSize: 16,
     fontWeight: 'bold',

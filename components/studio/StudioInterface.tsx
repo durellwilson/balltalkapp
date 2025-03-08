@@ -23,6 +23,10 @@ import { Picker } from '@react-native-picker/picker';
 import SongUploadForm from './SongUploadForm';
 import SongService from '../../services/SongService';
 import { Project, Track } from './StudioTypes';
+import CollaborationPanel from './CollaborationPanel';
+import AudioFileUploader from './AudioFileUploader';
+import AudioLibrary from './AudioLibrary';
+import AudioStorageService, { AudioFileMetadata } from '../../services/AudioStorageService';
 
 const { width } = Dimensions.get('window');
 
@@ -44,6 +48,10 @@ const StudioInterface: React.FC = () => {
   const [showBeatLibrary, setShowBeatLibrary] = useState(false);
   const [selectedTrackId, setSelectedTrackId] = useState<string | null>(null);
     const [showUploadForm, setShowUploadForm] = useState(false);
+    const [showCollaborationPanel, setShowCollaborationPanel] = useState(false);
+    const [showAudioFileUploader, setShowAudioFileUploader] = useState(false);
+    const [uploadTargetTrackId, setUploadTargetTrackId] = useState<string | null>(null);
+    const [showAudioLibrary, setShowAudioLibrary] = useState(false);
 
     // References
     const recordingRef = useRef<Audio.Recording | null>(null);
@@ -413,42 +421,60 @@ const StudioInterface: React.FC = () => {
   };
 
   const playAllTracks = async (): Promise<void> => {
-    if (!currentProject || currentProject.tracks.length === 0) return;
+    if (!currentProject || currentProject.tracks.length === 0) {
+      console.log('No tracks to play');
+      return;
+    }
 
+    setIsPlaying(true);
+    
     try {
-      // Stop any current playback
-      await stopPlayback();
-
-      // Start playback for all tracks with audio
-      const tracksWithAudio = currentProject.tracks.filter(
-        (track) => track.audioUri
-      );
-
-      if (tracksWithAudio.length === 0) {
-        Alert.alert('No Audio', 'There are no recorded tracks to play.');
-        return;
-      }
-
-      // In a real DAW, we would synchronize all tracks
-      // For this demo, we'll just play the first track
-      await playTrack(tracksWithAudio[0].id);
-
-      setIsPlaying(true);
-
-      // Start playback timer
+      console.log('Starting playback of all tracks...');
+      
+      // Initialize playback position
       setPlaybackPosition(0);
+      
+      // Start timer to update playback position
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+      }
+      
       timerRef.current = setInterval(() => {
         setPlaybackPosition((prev) => {
           if (prev >= projectDuration) {
-            stopPlayback();
+            if (timerRef.current) {
+              clearInterval(timerRef.current);
+            }
+            setIsPlaying(false);
             return 0;
           }
-          return prev + 1;
+          return prev + 0.1;
         });
-      }, 1000);
+      }, 100);
+      
+      // Play each track
+      for (const track of currentProject.tracks) {
+        if (track.audioUrl || track.audioUri) {
+          try {
+            console.log(`Playing track: ${track.name}`);
+            
+            // Create a new sound object
+            const { sound } = await Audio.Sound.createAsync(
+              { uri: track.audioUrl || track.audioUri },
+              { shouldPlay: true }
+            );
+            
+            // Store sound reference for later cleanup
+            track.sound = sound;
+          } catch (trackError) {
+            console.error(`Error playing track ${track.name}:`, trackError);
+          }
+        }
+      }
     } catch (error) {
-      console.error('Error playing all tracks:', error);
-      Alert.alert('Playback Error', 'Failed to play tracks. Please try again.');
+      console.error('Error starting playback:', error);
+      setIsPlaying(false);
+      Alert.alert('Playback Error', 'Could not play tracks. Please try again.');
     }
   };
 
@@ -572,33 +598,188 @@ const StudioInterface: React.FC = () => {
         )}
 
         <TouchableOpacity
+          style={[styles.trackButton, styles.uploadButton]}
+          onPress={() => showAudioFileUploaderForTrack(track.id)}
+          disabled={isRecording || track.isPlaying}
+        >
+          <Ionicons name="cloud-upload-outline" size={18} color="white" />
+        </TouchableOpacity>
+
+        <TouchableOpacity
           style={[styles.trackButton, styles.deleteButton]}
           onPress={() => deleteTrack(track.id)}
           disabled={isRecording || track.isPlaying}
         >
           <Ionicons name="trash-outline" size={18} color="white" />
         </TouchableOpacity>
-                <TextInput
-                    style={styles.volumeInput}
-                    keyboardType="numeric"
-                    placeholder="Vol"
-                    value={String(track.volume)}
-                    onChangeText={(value) => {
-                        const newVolume = parseFloat(value);
-                        if (!isNaN(newVolume)) {
-                            // Update track volume
-                            const updatedTracks = currentProject!.tracks.map((t) => {
-                                if (t.id === track.id) {
-                                    return { ...t, volume: Math.max(0, Math.min(1, newVolume)) }; // Clamp between 0 and 1
-                                }
-                                return t;
-                            });
-                            setCurrentProject({ ...currentProject!, tracks: updatedTracks });
-                        }
-                    }}
-                />
+        
+        <TextInput
+          style={styles.volumeInput}
+          keyboardType="numeric"
+          placeholder="Vol"
+          value={String(track.volume)}
+          onChangeText={(value) => {
+            const newVolume = parseFloat(value);
+            if (!isNaN(newVolume)) {
+              // Update track volume
+              const updatedTracks = currentProject!.tracks.map((t) => {
+                if (t.id === track.id) {
+                  return { ...t, volume: Math.max(0, Math.min(1, newVolume)) }; // Clamp between 0 and 1
+                }
+                return t;
+              });
+              setCurrentProject({ ...currentProject!, tracks: updatedTracks });
+            }
+          }}
+        />
       </View>
     );
+  };
+
+  // Handle audio file upload completion
+  const handleAudioFileUploaded = (fileUrl: string, fileName: string, duration: number) => {
+    if (!currentProject) return;
+    
+    console.log(`Audio file uploaded: ${fileName}, URL: ${fileUrl}, Duration: ${duration}s`);
+    
+    // If we have a target track, update it with the new audio
+    if (uploadTargetTrackId) {
+      // Find the track
+      const trackIndex = currentProject.tracks.findIndex(t => t.id === uploadTargetTrackId);
+      
+      if (trackIndex >= 0) {
+        // Create updated tracks array
+        const updatedTracks = [...currentProject.tracks];
+        updatedTracks[trackIndex] = {
+          ...updatedTracks[trackIndex],
+          audioUri: fileUrl,
+          name: updatedTracks[trackIndex].name || fileName.split('.')[0], // Use filename as track name if none exists
+          duration: duration,
+          lastModified: new Date().toISOString(),
+        };
+        
+        // Update the project
+        const updatedProject = {
+          ...currentProject,
+          tracks: updatedTracks,
+          updatedAt: new Date().toISOString()
+        };
+        
+        // Save the project update to Firebase
+        DawService.updateProject(updatedProject)
+          .then(() => {
+            console.log('Project updated with new audio file');
+            
+            // Update local state
+            setCurrentProject(updatedProject);
+            
+            // Calculate new project duration
+            calculateProjectDuration(updatedProject);
+            
+            // Close the uploader modal
+            setShowAudioFileUploader(false);
+            
+            // Play the uploaded track after a short delay
+            setTimeout(() => {
+              playTrack(uploadTargetTrackId);
+            }, 500);
+          })
+          .catch(error => {
+            console.error('Failed to update project:', error);
+            Alert.alert('Error', 'Failed to update project with new audio');
+          });
+      }
+    } else {
+      // If no target track, create a new track with the audio
+      const newTrack: Track = {
+        id: `track-${Date.now()}`,
+        name: fileName.split('.')[0], // Use filename as track name
+        audioUri: fileUrl,
+        isRecording: false,
+        isPlaying: false,
+        volume: 1.0,
+        trackNumber: currentProject.tracks.length + 1,
+        recordingIds: [],
+        duration: duration,
+        lastModified: new Date().toISOString(),
+      };
+      
+      // Add the new track to the project
+      const updatedProject = {
+        ...currentProject,
+        tracks: [...currentProject.tracks, newTrack],
+        updatedAt: new Date().toISOString()
+      };
+      
+      // Save the project update to Firebase
+      DawService.updateProject(updatedProject)
+        .then(() => {
+          console.log('Project updated with new track');
+          
+          // Update the project state
+          setCurrentProject(updatedProject);
+          
+          // Calculate new project duration
+          calculateProjectDuration(updatedProject);
+          
+          // Close the uploader modal
+          setShowAudioFileUploader(false);
+          
+          // Select the new track
+          setSelectedTrackId(newTrack.id);
+          
+          // Play the new track after a short delay
+          setTimeout(() => {
+            playTrack(newTrack.id);
+          }, 500);
+        })
+        .catch(error => {
+          console.error('Failed to update project with new track:', error);
+          Alert.alert('Error', 'Failed to add new track to project');
+        });
+    }
+  };
+
+  // Show audio file uploader for a specific track
+  const showAudioFileUploaderForTrack = (trackId: string) => {
+    setUploadTargetTrackId(trackId);
+    setShowAudioFileUploader(true);
+  };
+
+  // Handle selecting an audio file from the library
+  const handleSelectAudioFromLibrary = (audioFile: AudioFileMetadata) => {
+    if (!currentProject) return;
+    
+    // Create a new track with the selected audio
+    const newTrack: Track = {
+      id: `track-${Date.now()}`,
+      name: audioFile.originalFileName.split('.')[0], // Use filename as track name
+      audioUri: audioFile.downloadUrl,
+      audioFileId: audioFile.id,
+      isRecording: false,
+      isPlaying: false,
+      volume: 1.0,
+      trackNumber: currentProject.tracks.length + 1,
+      recordingIds: []
+    };
+    
+    // Add the new track to the project
+    const updatedProject = {
+      ...currentProject,
+      tracks: [...currentProject.tracks, newTrack],
+      updatedAt: new Date().toISOString()
+    };
+    
+    // Update the project state
+    setCurrentProject(updatedProject);
+    
+    // Calculate new project duration
+    calculateProjectDuration(updatedProject);
+    
+    // Close the library
+    setShowAudioLibrary(false);
+    
+    Alert.alert('Success', `Audio file "${audioFile.originalFileName}" added as new track.`);
   };
 
   if (isLoading) {
@@ -711,12 +892,36 @@ const StudioInterface: React.FC = () => {
         </TouchableOpacity>
 
         <TouchableOpacity
-                  style={styles.toolbarButton}
-                  onPress={() => setShowUploadForm(true)}
-                >
-                  <Ionicons name="cloud-upload-outline" size={24} color={Colors.primary} />
-                  <Text style={styles.toolbarButtonText}>Upload Song</Text>
-                </TouchableOpacity>
+          style={styles.toolbarButton}
+          onPress={() => setShowAudioFileUploader(true)}
+        >
+          <Ionicons name="document-outline" size={24} color={Colors.primary} />
+          <Text style={styles.toolbarButtonText}>Import Audio</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.toolbarButton}
+          onPress={() => setShowAudioLibrary(true)}
+        >
+          <Ionicons name="library-outline" size={24} color={Colors.primary} />
+          <Text style={styles.toolbarButtonText}>Audio Library</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.toolbarButton}
+          onPress={() => setShowCollaborationPanel(true)}
+        >
+          <Ionicons name="people-outline" size={24} color={Colors.primary} />
+          <Text style={styles.toolbarButtonText}>Collaborate</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.toolbarButton}
+          onPress={() => setShowUploadForm(true)}
+        >
+          <Ionicons name="cloud-upload-outline" size={24} color={Colors.primary} />
+          <Text style={styles.toolbarButtonText}>Upload Song</Text>
+        </TouchableOpacity>
 
         <TouchableOpacity style={styles.toolbarButton}>
           <Ionicons name="settings-outline" size={24} color={Colors.primary} />
@@ -740,6 +945,15 @@ const StudioInterface: React.FC = () => {
         onClose={() => setShowBeatLibrary(false)}
         onSelectBeat={handleSelectBeat}
       />
+
+      {/* Collaboration Panel */}
+      {currentProject && (
+        <CollaborationPanel
+          projectId={currentProject.id}
+          isVisible={showCollaborationPanel}
+          onClose={() => setShowCollaborationPanel(false)}
+        />
+      )}
 
       {/* New Project Modal */}
       <Modal
@@ -875,6 +1089,40 @@ const StudioInterface: React.FC = () => {
                     </View>
                 </View>
             </Modal>
+
+      {/* Audio File Uploader Modal */}
+      {currentProject && (
+        <Modal
+          visible={showAudioFileUploader}
+          transparent={true}
+          animationType="fade"
+          onRequestClose={() => setShowAudioFileUploader(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.audioUploaderContainer}>
+              <AudioFileUploader
+                projectId={currentProject.id}
+                trackId={uploadTargetTrackId || undefined}
+                onUploadComplete={handleAudioFileUploaded}
+                onCancel={() => {
+                  setShowAudioFileUploader(false);
+                  setUploadTargetTrackId(null);
+                }}
+              />
+            </View>
+          </View>
+        </Modal>
+      )}
+
+      {/* Audio Library Modal */}
+      {currentProject && (
+        <AudioLibrary
+          isVisible={showAudioLibrary}
+          onClose={() => setShowAudioLibrary(false)}
+          projectId={currentProject.id}
+          onSelectAudio={handleSelectAudioFromLibrary}
+        />
+      )}
     </View>
   );
 };
@@ -1013,14 +1261,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'flex-end',
   },
-  trackButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginLeft: 8,
-  },
     volumeInput: {
         width: 40,
         height: 30,
@@ -1137,5 +1377,23 @@ const styles = StyleSheet.create({
       width: '100%',
     borderWidth: 1,
     borderColor: '#ccc',
+  },
+  uploadButton: {
+    backgroundColor: '#4a90e2',
+  },
+  audioUploaderContainer: {
+    width: '90%',
+    maxWidth: 600,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  trackButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 8,
   },
 });

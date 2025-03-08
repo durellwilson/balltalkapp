@@ -100,11 +100,10 @@ export default function AthleteExamples() {
             The AthleteDashboard component displays a collection of athlete cards in a dashboard layout.
           </Text>
           
-          <AthleteDashboard onNavigateToProfile={function (): void {
-            throw new Error('Function not implemented.');
-          } } onNavigateToStudio={function (): void {
-            throw new Error('Function not implemented.');
-          } }          />
+          <AthleteDashboard 
+            onNavigateToProfile={() => router.push('/athlete-profile')}
+            onNavigateToStudio={() => router.push('/studio')}
+          />
         </View>
 
         {/* Usage Instructions */}

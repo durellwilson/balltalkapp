@@ -9,6 +9,12 @@ import Colors from './Colors';
 import Typography from './Typography';
 import Layout from './Layout';
 
+// Theme type enum
+export enum ThemeType {
+  DARK = 'dark',
+  LIGHT = 'light'
+}
+
 // Base theme with common properties
 const baseTheme = {
   spacing: Layout.spacing,
@@ -21,7 +27,7 @@ const baseTheme = {
 // Light theme
 export const lightTheme = {
   ...baseTheme,
-  mode: 'light',
+  mode: ThemeType.LIGHT,
   colors: {
     // Background colors
     background: Colors.neutral200,
@@ -69,7 +75,7 @@ export const lightTheme = {
 // Dark theme
 export const darkTheme = {
   ...baseTheme,
-  mode: 'dark',
+  mode: ThemeType.DARK,
   colors: {
     // Background colors
     background: Colors.neutral900,
@@ -119,7 +125,7 @@ export const defaultTheme = lightTheme;
 
 // Theme interface for TypeScript
 export interface Theme {
-  mode: 'light' | 'dark';
+  mode: ThemeType;
   colors: {
     background: string;
     surface: string;
@@ -156,9 +162,43 @@ export interface Theme {
   shadow: typeof Layout.shadow;
 }
 
+// Get theme by type
+export const getTheme = (themeType: ThemeType): Theme => {
+  return themeType === ThemeType.DARK ? darkTheme : lightTheme;
+};
+
 // Export a default object for easy importing
 export default {
   light: lightTheme,
   dark: darkTheme,
   default: defaultTheme,
+  ThemeType,
+  getTheme,
+};
+
+// Audio processing specific colors
+export const AudioProcessingColors = {
+  waveform: {
+    background: '#1E1E1E',
+    primary: '#8E44AD',
+    secondary: '#3498DB',
+    grid: '#444444',
+    text: '#FFFFFF',
+  },
+  spectrum: {
+    background: '#1E1E1E',
+    low: '#2ECC71',
+    mid: '#F39C12',
+    high: '#E74C3C',
+    grid: '#444444',
+    text: '#FFFFFF',
+  },
+  controls: {
+    knob: '#8E44AD',
+    slider: '#3498DB',
+    button: '#2A2A2A',
+    buttonActive: '#8E44AD',
+    text: '#FFFFFF',
+    background: '#2A2A2A',
+  }
 };

@@ -8,14 +8,16 @@
   "userInterfaceStyle": "automatic",
   "ios": {
     "googleServicesFile": "./GoogleService-Info.plist",
-    "supportsTablet": true
+    "supportsTablet": true,
+    "bundleIdentifier": "com.balltalk.app"
   },
   "android": {
     "googleServicesFile": "./app/google-services.json",
     "adaptiveIcon": {
       "foregroundImage": "./assets/images/adaptive-icon.png",
       "backgroundColor": "#ffffff"
-    }
+    },
+    "package": "com.balltalk.app"
   },
   "web": {
     "bundler": "metro",
@@ -37,6 +39,14 @@
           "useFrameworks": "static"
         }
       }
+    ],
+    [
+      "expo-auth-session"
     ]
-  ]
+  ],
+  "extra": {
+    "eas": {
+      "projectId": "your-eas-project-id"
+    }
+  }
 }

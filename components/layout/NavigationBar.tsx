@@ -27,13 +27,8 @@ const NavigationBar = () => {
       icon: ({ size, color }) => <Ionicons name="home" size={size} color={color} />,
     },
     {
-      name: 'Create',
+      name: 'Studio',
       path: '/(tabs)/studio',
-      icon: ({ size, color }) => <Ionicons name="add-circle" size={size} color={color} />,
-    },
-    {
-      name: 'Recordings',
-      path: '/(tabs)/recordings',
       icon: ({ size, color }) => <Ionicons name="mic" size={size} color={color} />,
     },
     {
@@ -53,6 +48,11 @@ const NavigationBar = () => {
       icon: ({ size, color }) => <MaterialIcons name="phonelink-setup" size={size} color={color} />,
     },
   ];
+
+  // Only show the Studio tab for athletes
+  if (user?.role !== 'athlete' && user?.role !== 'fan') {
+    navigationItems = navigationItems.filter(item => item.path !== '/(tabs)/studio');
+  }
 
   // Handle tab press
   const handlePress = (path: string) => {

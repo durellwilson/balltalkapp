@@ -267,9 +267,9 @@ class TestAccountsService {
       if (account.provider === 'email') {
         user = await AuthService.signInWithEmail(account.email, account.password);
       } else if (account.provider === 'google' && Platform.OS === 'web') {
-        user = await AuthService.signInWithGoogle(account.username, account.role as 'athlete' | 'fan');
+        user = await AuthService.signInWithGoogle();
       } else if (account.provider === 'apple' && Platform.OS === 'web') {
-        user = await AuthService.signInWithApple(account.username, account.role as 'athlete' | 'fan');
+        user = await AuthService.signInWithApple();
       } else {
         throw new Error(`Provider ${account.provider} not supported on this platform`);
       }

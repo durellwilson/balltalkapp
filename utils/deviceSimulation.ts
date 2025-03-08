@@ -122,7 +122,7 @@ const applyNetworkConditions = (condition?: 'good' | 'poor' | 'offline'): void =
       }
       
       // Call original fetch
-      return originalFetch(...args);
+      return originalFetch.apply(null, args);
     };
   }
 };

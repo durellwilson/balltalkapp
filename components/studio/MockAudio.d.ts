@@ -18,30 +18,30 @@ export class Sound {
 export function requestPermissionsAsync(): Promise<{ granted: boolean }>;
 export function setAudioModeAsync(options: any): Promise<void>;
 
-export const RecordingOptionsPresets: {
+export const RecordingOptionsPresets = {
   HIGH_QUALITY: {
     android: {
-      extension: string;
-      outputFormat: number;
-      audioEncoder: number;
-      sampleRate: number;
-      numberOfChannels: number;
-      bitRate: number;
-    };
+      extension: '.m4a',
+      outputFormat: 2,
+      audioEncoder: 3,
+      sampleRate: 44100,
+      numberOfChannels: 2,
+      bitRate: 128000
+    },
     ios: {
-      extension: string;
-      outputFormat: string;
-      audioQuality: string;
-      sampleRate: number;
-      numberOfChannels: number;
-      bitRate: number;
-      linearPCMBitDepth: number;
-      linearPCMIsBigEndian: boolean;
-      linearPCMIsFloat: boolean;
-    };
+      extension: '.m4a',
+      outputFormat: 'aac',
+      audioQuality: 'high',
+      sampleRate: 44100,
+      numberOfChannels: 2,
+      bitRate: 128000,
+      linearPCMBitDepth: 16,
+      linearPCMIsBigEndian: false,
+      linearPCMIsFloat: false
+    },
     web: {
-      mimeType: string;
-      bitsPerSecond: number;
-    };
-  };
-};
+      mimeType: 'audio/webm',
+      bitsPerSecond: 128000
+    }
+  }
+}

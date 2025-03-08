@@ -1,20 +1,66 @@
-import React, { useState } from 'react';
-import { SafeAreaView, StatusBar, StyleSheet, View, TouchableOpacity, Text } from 'react-native';
-import { Stack } from 'expo-router';
+import React, { useState, useEffect } from 'react';
+import { SafeAreaView, StatusBar, StyleSheet, View, TouchableOpacity, Text, Alert } from 'react-native';
+import { Stack, router } from 'expo-router';
 import FanProfileView from '../../components/profile/FanProfileView';
 import FanDashboard from '../../components/dashboard/FanDashboard';
 import FanCommunityView from '../../components/community/FanCommunityView';
 import FanContentDiscovery from '../../components/content/FanContentDiscovery';
 import Colors from '../../constants/Colors';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
+import { useAuth } from '../../contexts/auth';
 
 export default function FanProfileScreen() {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'profile' | 'community' | 'content'>('dashboard');
+  const { user, signOut } = useAuth();
+
+  // Check if user is a fan
+  useEffect(() => {
+    if (user && user.role !== 'fan') {
+      Alert.alert(
+        'Not a Fan Account',
+        'This section is only for fan accounts. You will be redirected to the main profile.',
+        [
+          { 
+            text: 'OK', 
+            onPress: () => router.replace('/(tabs)/profile') 
+          }
+        ]
+      );
+    }
+  }, [user]);
 
   const navigateToDashboard = () => setActiveTab('dashboard');
   const navigateToProfile = () => setActiveTab('profile');
   const navigateToCommunity = () => setActiveTab('community');
   const navigateToContent = () => setActiveTab('content');
+
+  const handleSignOut = async () => {
+    try {
+      await signOut();
+      router.replace('/(auth)/login');
+    } catch (error) {
+      console.error('Error signing out:', error);
+      Alert.alert('Error', 'Failed to sign out. Please try again.');
+    }
+  };
+
+  if (!user) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <StatusBar barStyle="dark-content" />
+        <View style={styles.centerContent}>
+          <Text style={styles.title}>Fan Hub</Text>
+          <Text style={styles.message}>Please sign in to access the Fan Hub</Text>
+          <TouchableOpacity 
+            style={styles.button}
+            onPress={() => router.replace('/(auth)/login')}
+          >
+            <Text style={styles.buttonText}>Sign In</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -29,6 +75,11 @@ export default function FanProfileScreen() {
           headerTitleStyle: {
             fontWeight: 'bold',
           },
+          headerRight: () => (
+            <TouchableOpacity onPress={handleSignOut} style={styles.signOutButton}>
+              <Ionicons name="log-out-outline" size={24} color="#fff" />
+            </TouchableOpacity>
+          ),
         }} 
       />
       
@@ -153,5 +204,32 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
+  },
+  centerContent: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    marginBottom: 16,
+  },
+  message: {
+    fontSize: 16,
+    marginBottom: 24,
+  },
+  button: {
+    backgroundColor: Colors.primary,
+    padding: 16,
+    borderRadius: 8,
+  },
+  buttonText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#fff',
+  },
+  signOutButton: {
+    padding: 8,
   },
 });

@@ -25,7 +25,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>0/78</span>
+                <span class='fraction'>0/77</span>
             </div>
         
             
@@ -46,7 +46,7 @@
             <div class='fl pad1y space-right2'>
                 <span class="strong">0% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>0/75</span>
+                <span class='fraction'>0/74</span>
             </div>
         
             
@@ -350,11 +350,7 @@
 <a name='L285'></a><a href='#L285'>285</a>
 <a name='L286'></a><a href='#L286'>286</a>
 <a name='L287'></a><a href='#L287'>287</a>
-<a name='L288'></a><a href='#L288'>288</a>
-<a name='L289'></a><a href='#L289'>289</a>
-<a name='L290'></a><a href='#L290'>290</a>
-<a name='L291'></a><a href='#L291'>291</a>
-<a name='L292'></a><a href='#L292'>292</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<a name='L288'></a><a href='#L288'>288</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -370,10 +366,6 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -648,7 +640,7 @@
 <span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">// services/SubscriptionService.ts
 import { db } from '../src/lib/firebase';
 import { 
-  doc, 
+  doc,
   setDoc, 
   getDoc, 
   collection, 
@@ -656,15 +648,11 @@ import {
   where, 
   getDocs, 
   updateDoc, 
-  Firestore,
   increment,
   Timestamp,
-  deleteDoc
-} from 'firebase/firestore';
+  deleteDoc,
+} from '@react-native-firebase/firestore';
 import { v4 as uuidv4 } from 'uuid';
-&nbsp;
-// Cast db to proper type
-const firebaseDb = <span class="cstat-no" title="statement not covered" >db as unknown as Firestore;</span>
 &nbsp;
 // Subscription tier types
 export type SubscriptionTier = 'free' | 'basic' | 'premium' | 'vip';
@@ -738,14 +726,14 @@ class SubscriptionService {
       };
       
       // Save subscription to Firestore
-<span class="cstat-no" title="statement not covered" >      await setDoc(doc(firebaseDb, 'subscriptions', subscriptionId), subscription);</span>
+<span class="cstat-no" title="statement not covered" >      await setDoc(doc(db, 'subscriptions', subscriptionId), subscription);</span>
       
       // Create transaction record
       const transaction: SubscriptionTransaction = <span class="cstat-no" title="statement not covered" >{</span>
         id: uuidv4(),
         subscriptionId,
         subscriberId,
-        athleteId,
+        athleteId, 
         amount: price,
         currency: 'USD',
         status: 'completed',
@@ -754,11 +742,11 @@ class SubscriptionService {
         timestamp: startDate
       };
       
-<span class="cstat-no" title="statement not covered" >      await setDoc(doc(firebaseDb, 'subscriptionTransactions', transaction.id), transaction);</span>
+<span class="cstat-no" title="statement not covered" >      await setDoc(doc(db, 'subscriptionTransactions', transaction.id), transaction);</span>
       
       // Update athlete's subscriber count
-<span class="cstat-no" title="statement not covered" >      await updateDoc(doc(firebaseDb, 'profiles', athleteId), {</span>
-        subscriberCount: increment(1)
+<span class="cstat-no" title="statement not covered" >        await updateDoc(doc(db, 'profiles', athleteId), {</span>
+          subscriberCount: increment(1)
       });
       
 <span class="cstat-no" title="statement not covered" >      return subscription;</span>
@@ -772,7 +760,7 @@ class SubscriptionService {
 <span class="fstat-no" title="function not covered" >  as</span>ync cancelSubscription(subscriptionId: string, subscriberId: string): Promise&lt;boolean&gt; {
 <span class="cstat-no" title="statement not covered" >    try {</span>
       // Get subscription to verify ownership
-      const subscriptionDoc = <span class="cstat-no" title="statement not covered" >await getDoc(doc(firebaseDb, 'subscriptions', subscriptionId));</span>
+      const subscriptionDoc = <span class="cstat-no" title="statement not covered" >await getDoc(doc(db, 'subscriptions', subscriptionId));</span>
 <span class="cstat-no" title="statement not covered" >      if (!subscriptionDoc.exists()) {</span>
 <span class="cstat-no" title="statement not covered" >        return false;</span>
       }
@@ -784,7 +772,7 @@ class SubscriptionService {
 <span class="cstat-no" title="statement not covered" >        return false;</span>
       }
       
-      // Update subscription
+       // Update subscription
 <span class="cstat-no" title="statement not covered" >      await updateDoc(doc(firebaseDb, 'subscriptions', subscriptionId), {</span>
         autoRenew: false,
         updatedAt: new Date().toISOString()
@@ -800,7 +788,7 @@ class SubscriptionService {
   // Get a user's active subscriptions
 <span class="fstat-no" title="function not covered" >  as</span>ync getUserSubscriptions(subscriberId: string): Promise&lt;Subscription[]&gt; {
 <span class="cstat-no" title="statement not covered" >    try {</span>
-      const subscriptionsRef = <span class="cstat-no" title="statement not covered" >collection(firebaseDb, 'subscriptions');</span>
+      const subscriptionsRef = <span class="cstat-no" title="statement not covered" >collection(db, 'subscriptions');</span>
       const q = <span class="cstat-no" title="statement not covered" >query(</span>
         subscriptionsRef, 
         where('subscriberId', '==', subscriberId),
@@ -818,7 +806,7 @@ class SubscriptionService {
   // Get an athlete's subscribers
 <span class="fstat-no" title="function not covered" >  as</span>ync getAthleteSubscribers(athleteId: string): Promise&lt;Subscription[]&gt; {
 <span class="cstat-no" title="statement not covered" >    try {</span>
-      const subscriptionsRef = <span class="cstat-no" title="statement not covered" >collection(firebaseDb, 'subscriptions');</span>
+      const subscriptionsRef = <span class="cstat-no" title="statement not covered" >collection(db, 'subscriptions');</span>
       const q = <span class="cstat-no" title="statement not covered" >query(</span>
         subscriptionsRef, 
         where('athleteId', '==', athleteId),
@@ -836,7 +824,7 @@ class SubscriptionService {
   // Check if a user is subscribed to an athlete
 <span class="fstat-no" title="function not covered" >  as</span>ync isSubscribed(subscriberId: string, athleteId: string): Promise&lt;{isSubscribed: boolean, tier?: SubscriptionTier}&gt; {
 <span class="cstat-no" title="statement not covered" >    try {</span>
-      const subscriptionsRef = <span class="cstat-no" title="statement not covered" >collection(firebaseDb, 'subscriptions');</span>
+      const subscriptionsRef = <span class="cstat-no" title="statement not covered" >collection(db, 'subscriptions');</span>
       const q = <span class="cstat-no" title="statement not covered" >query(</span>
         subscriptionsRef, 
         where('subscriberId', '==', subscriberId),
@@ -863,7 +851,7 @@ class SubscriptionService {
   // Get subscription transaction history
 <span class="fstat-no" title="function not covered" >  as</span>ync getTransactionHistory(userId: string, isAthlete: boolean = <span class="branch-0 cbranch-no" title="branch not covered" >false)</span>: Promise&lt;SubscriptionTransaction[]&gt; {
 <span class="cstat-no" title="statement not covered" >    try {</span>
-      const transactionsRef = <span class="cstat-no" title="statement not covered" >collection(firebaseDb, 'subscriptionTransactions');</span>
+      const transactionsRef = <span class="cstat-no" title="statement not covered" >collection(db, 'subscriptionTransactions');</span>
       const fieldName = <span class="cstat-no" title="statement not covered" >isAthlete ? 'athleteId' : 'subscriberId';</span>
       
       const q = <span class="cstat-no" title="statement not covered" >query(</span>
@@ -883,7 +871,7 @@ class SubscriptionService {
 <span class="fstat-no" title="function not covered" >  as</span>ync processRenewals(): Promise&lt;number&gt; {
 <span class="cstat-no" title="statement not covered" >    try {</span>
       const now = <span class="cstat-no" title="statement not covered" >new Date();</span>
-      const subscriptionsRef = <span class="cstat-no" title="statement not covered" >collection(firebaseDb, 'subscriptions');</span>
+      const subscriptionsRef = <span class="cstat-no" title="statement not covered" >collection(db, 'subscriptions');</span>
       
       // Get subscriptions that are active, set to auto-renew, and have an end date before now
       const q = <span class="cstat-no" title="statement not covered" >query(</span>
@@ -923,7 +911,7 @@ class SubscriptionService {
           timestamp: now.toISOString()
         };
         
-<span class="cstat-no" title="statement not covered" >        await setDoc(doc(firebaseDb, 'subscriptionTransactions', transaction.id), transaction);</span>
+<span class="cstat-no" title="statement not covered" >        await setDoc(doc(db, 'subscriptionTransactions', transaction.id), transaction);</span>
 <span class="cstat-no" title="statement not covered" >        renewalCount++;</span>
       }
       
@@ -943,7 +931,7 @@ export default new SubscriptionService();
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2025-03-05T15:42:05.692Z
+                at 2025-03-07T10:44:07.332Z
             </div>
         <script src="../../prettify.js"></script>
         <script>

@@ -1,11 +1,12 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { 
   View, 
   StyleSheet, 
   TouchableOpacity, 
   Text, 
   Platform,
-  ActivityIndicator
+  ActivityIndicator,
+  Alert
 } from 'react-native';
 import { AntDesign, FontAwesome } from '@expo/vector-icons';
 import { useAuth } from '../../contexts/auth';
@@ -26,7 +27,7 @@ const SocialAuthButtons: React.FC<SocialAuthButtonsProps> = ({
   role = 'fan'
 }) => {
   const { signInWithGoogle, signInWithApple } = useAuth();
-  const [isLoading, setIsLoading] = React.useState<'google' | 'apple' | null>(null);
+  const [isLoading, setIsLoading] = useState<'google' | 'apple' | null>(null);
   
   const handleGoogleAuth = async () => {
     try {
@@ -35,8 +36,16 @@ const SocialAuthButtons: React.FC<SocialAuthButtonsProps> = ({
       
       await signInWithGoogle(username, role);
       
-    } catch (error) {
+    } catch (error: any) {
       console.error('Google auth error:', error);
+      
+      // Show user-friendly error message
+      const errorMessage = error.message || 'An error occurred during Google sign in';
+      Alert.alert(
+        'Google Sign In Error',
+        errorMessage,
+        [{ text: 'OK' }]
+      );
     } finally {
       setIsLoading(null);
       if (onAuthEnd) onAuthEnd();
@@ -50,8 +59,16 @@ const SocialAuthButtons: React.FC<SocialAuthButtonsProps> = ({
       
       await signInWithApple(username, role);
       
-    } catch (error) {
+    } catch (error: any) {
       console.error('Apple auth error:', error);
+      
+      // Show user-friendly error message
+      const errorMessage = error.message || 'An error occurred during Apple sign in';
+      Alert.alert(
+        'Apple Sign In Error',
+        errorMessage,
+        [{ text: 'OK' }]
+      );
     } finally {
       setIsLoading(null);
       if (onAuthEnd) onAuthEnd();
@@ -70,6 +87,8 @@ const SocialAuthButtons: React.FC<SocialAuthButtonsProps> = ({
         style={[styles.socialButton, styles.googleButton]} 
         onPress={handleGoogleAuth}
         disabled={isLoading !== null}
+        accessibilityLabel={isSignUp ? "Sign up with Google" : "Sign in with Google"}
+        accessibilityRole="button"
       >
         {isLoading === 'google' ? (
           <ActivityIndicator size="small" color="white" />
@@ -88,6 +107,8 @@ const SocialAuthButtons: React.FC<SocialAuthButtonsProps> = ({
           style={[styles.socialButton, styles.appleButton]} 
           onPress={handleAppleAuth}
           disabled={isLoading !== null}
+          accessibilityLabel={isSignUp ? "Sign up with Apple" : "Sign in with Apple"}
+          accessibilityRole="button"
         >
           {isLoading === 'apple' ? (
             <ActivityIndicator size="small" color="white" />
@@ -101,6 +122,10 @@ const SocialAuthButtons: React.FC<SocialAuthButtonsProps> = ({
           )}
         </TouchableOpacity>
       ) : null}
+      
+      <Text style={styles.noteText}>
+        Note: Social sign-in requires additional configuration. Please check the Firebase console.
+      </Text>
     </View>
   );
 };
@@ -147,6 +172,12 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     fontSize: 16,
   },
+  noteText: {
+    fontSize: 12,
+    color: '#666',
+    textAlign: 'center',
+    marginTop: 10,
+  }
 });
 
 export default SocialAuthButtons;

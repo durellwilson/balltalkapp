@@ -1,11 +1,33 @@
-import { doc, setDoc, collection, query, where, orderBy, getDocs, getDoc, FirestoreError } from '@react-native-firebase/firestore';
-import { ref, getDownloadURL, uploadBytes } from '@react-native-firebase/storage';
-import type { Track } from '../components/studio/StudioTypes';
+import { 
+  doc, 
+  setDoc, 
+  collection, 
+  query, 
+  where, 
+  orderBy, 
+  getDocs, 
+  getDoc, 
+  FirestoreError, 
+  updateDoc,
+  Firestore
+} from 'firebase/firestore';
+import { 
+  ref, 
+  getDownloadURL, 
+  uploadBytes,
+  FirebaseStorage
+} from 'firebase/storage';
+import type { Track, Collaborator } from '../components/studio/StudioTypes';
 import { Audio } from 'expo-av';
 import { Platform } from 'react-native';
 import { v4 as uuidv4 } from 'uuid';
 import { getDevicePlatform, getActiveDeviceSettings, simulateNetworkRequest } from '../utils/deviceSimulation';
 import { db, storage } from '../src/lib/firebase';
+import storage_lib from '@react-native-firebase/storage';
+
+// Properly type the Firebase services
+const firebaseDb: Firestore = db as Firestore;
+const firebaseStorage: FirebaseStorage = storage as FirebaseStorage;
 
 interface Project {
     id: string;
@@ -16,7 +38,9 @@ interface Project {
     isPublic: boolean;
     tracks: Track[];
     tempo?: number; // Make tempo optional
-    collaborators?: string[];
+    collaborators?: Collaborator[];
+    isCollaborative?: boolean;
+    collaborationSessionId?: string;
 }
 
 interface Recording {
@@ -263,7 +287,7 @@ async stopRecording(): Promise<Recording | null> {
                 console.log(`Uploading to Firebase Storage path: ${storagePath}`);
 
               // Create a storage reference
-              const storageRef = ref(storage(), storagePath);
+              const storageRef = ref(firebaseStorage, storagePath);
               
               // Upload to Firebase Storage with explicit content type
               console.log('Starting upload to Firebase Storage...');
@@ -318,7 +342,7 @@ async stopRecording(): Promise<Recording | null> {
               // Save the recording to Firestore
               try {
                 console.log('Saving recording to Firestore...');
-                const recordingRef = doc(db, RECORDINGS_COLLECTION, recordingId);
+                const recordingRef = doc(firebaseDb, RECORDINGS_COLLECTION, recordingId);
                 await setDoc(recordingRef, recording);
                 console.log('Recording saved to Firestore successfully');
 
@@ -327,7 +351,7 @@ async stopRecording(): Promise<Recording | null> {
                   console.log(`Updating project ${this.currentProjectId} with recording ${recordingId}`);
 
                   // Get the current project
-                  const projectRef = doc(db, PROJECTS_COLLECTION, this.currentProjectId);
+                  const projectRef = doc(firebaseDb, PROJECTS_COLLECTION, this.currentProjectId);
                   const projectDoc = await getDoc(projectRef);
 
                   if (projectDoc) {
@@ -642,7 +666,7 @@ async stopRecording(): Promise<Recording | null> {
             if (Platform.OS === 'web' && typeof window !== 'undefined') {
                 // Save to Firestore
                 try {
-                    const projectRef = doc(db, PROJECTS_COLLECTION, projectId);
+                    const projectRef = doc(firebaseDb, PROJECTS_COLLECTION, projectId);
                     await setDoc(projectRef, newProject);
                     console.log('Project created successfully:', projectId);
                 } catch (error) {
@@ -669,7 +693,7 @@ async stopRecording(): Promise<Recording | null> {
         try {
             if (Platform.OS === 'web' && typeof window !== 'undefined') {
                 // Query Firestore for the user's projects
-                const projectsRef = collection(db, PROJECTS_COLLECTION);
+                const projectsRef = collection(firebaseDb, PROJECTS_COLLECTION);
                 const projectsQuery = query(
                     projectsRef,
                     where('ownerId', '==', userId),
@@ -765,7 +789,7 @@ async stopRecording(): Promise<Recording | null> {
         try {
             const recordingId = uuidv4();
             const storagePath = `projects/${projectId}/tracks/${trackNumber}/${recordingId}.wav`;
-            const storageRef = ref(storage, storagePath);
+            const storageRef = ref(firebaseStorage, storagePath);
             
             // Fetch the audio blob from the URI
             const response = await fetch(uri);
@@ -791,11 +815,11 @@ async stopRecording(): Promise<Recording | null> {
             };
 
             // Save the recording to Firestore
-            const recordingRef = doc(db, RECORDINGS_COLLECTION, recordingId);
+            const recordingRef = doc(firebaseDb, RECORDINGS_COLLECTION, recordingId);
             await setDoc(recordingRef, recording);
 
             // Get the current project
-            const projectRef = doc(db, PROJECTS_COLLECTION, projectId);
+            const projectRef = doc(firebaseDb, PROJECTS_COLLECTION, projectId);
             const projectDoc = await getDoc(projectRef);
 
             if (projectDoc) {
@@ -837,6 +861,430 @@ async stopRecording(): Promise<Recording | null> {
             console.error('Error saving recording:', error);
             return null;
         }
+    }
+
+    /**
+     * Enable collaboration on a project
+     * @param projectId The ID of the project to enable collaboration on
+     * @param userId The ID of the user enabling collaboration
+     * @returns The updated project
+     */
+    async enableCollaboration(projectId: string, userId: string): Promise<Project | null> {
+      try {
+        const projectRef = doc(firebaseDb, PROJECTS_COLLECTION, projectId);
+        const projectDoc = await getDoc(projectRef);
+        
+        if (!projectDoc.exists()) {
+          console.error('Project not found');
+          return null;
+        }
+        
+        const projectData = projectDoc.data() as Project;
+        
+        // Check if user is the owner
+        if (projectData.ownerId !== userId) {
+          console.error('Only the project owner can enable collaboration');
+          return null;
+        }
+        
+        // Update the project
+        await updateDoc(projectRef, {
+          isCollaborative: true,
+          updatedAt: new Date().toISOString()
+        });
+        
+        // Get the updated project
+        const updatedProjectDoc = await getDoc(projectRef);
+        return updatedProjectDoc.data() as Project;
+      } catch (error) {
+        console.error('Error enabling collaboration:', error);
+        return null;
+      }
+    }
+    
+    /**
+     * Add a collaborator to a project
+     * @param projectId The ID of the project to add a collaborator to
+     * @param userId The ID of the user adding the collaborator
+     * @param collaboratorEmail The email of the collaborator to add
+     * @param role The role of the collaborator
+     * @returns The updated project
+     */
+    async addCollaborator(
+      projectId: string, 
+      userId: string, 
+      collaboratorEmail: string, 
+      role: 'editor' | 'viewer' = 'editor'
+    ): Promise<Project | null> {
+      try {
+        const projectRef = doc(firebaseDb, PROJECTS_COLLECTION, projectId);
+        const projectDoc = await getDoc(projectRef);
+        
+        if (!projectDoc.exists()) {
+          console.error('Project not found');
+          return null;
+        }
+        
+        const projectData = projectDoc.data() as Project;
+        
+        // Check if user is the owner
+        if (projectData.ownerId !== userId) {
+          console.error('Only the project owner can add collaborators');
+          return null;
+        }
+        
+        // Find the user by email
+        const usersQuery = query(
+          collection(firebaseDb, 'users'),
+          where('email', '==', collaboratorEmail)
+        );
+        
+        const usersSnapshot = await getDocs(usersQuery);
+        
+        if (usersSnapshot.empty) {
+          console.error('User not found with that email');
+          return null;
+        }
+        
+        const collaboratorDoc = usersSnapshot.docs[0];
+        const collaboratorData = collaboratorDoc.data();
+        
+        // Create the collaborator object
+        const newCollaborator: Collaborator = {
+          id: collaboratorDoc.id,
+          displayName: collaboratorData.displayName || collaboratorData.email,
+          email: collaboratorData.email,
+          role: role,
+          joinedAt: new Date().toISOString()
+        };
+        
+        // Add the collaborator to the project
+        const collaborators = projectData.collaborators || [];
+        
+        // Check if collaborator already exists
+        const existingIndex = collaborators.findIndex(c => c.id === newCollaborator.id);
+        
+        if (existingIndex >= 0) {
+          // Update existing collaborator
+          collaborators[existingIndex] = {
+            ...collaborators[existingIndex],
+            role: newCollaborator.role
+          };
+        } else {
+          // Add new collaborator
+          collaborators.push(newCollaborator);
+        }
+        
+        // Update the project
+        await updateDoc(projectRef, {
+          collaborators: collaborators,
+          updatedAt: new Date().toISOString()
+        });
+        
+        // Get the updated project
+        const updatedProjectDoc = await getDoc(projectRef);
+        return updatedProjectDoc.data() as Project;
+      } catch (error) {
+        console.error('Error adding collaborator:', error);
+        return null;
+      }
+    }
+    
+    /**
+     * Remove a collaborator from a project
+     * @param projectId The ID of the project to remove a collaborator from
+     * @param userId The ID of the user removing the collaborator
+     * @param collaboratorId The ID of the collaborator to remove
+     * @returns The updated project
+     */
+    async removeCollaborator(
+      projectId: string,
+      userId: string,
+      collaboratorId: string
+    ): Promise<Project | null> {
+      try {
+        const projectRef = doc(firebaseDb, PROJECTS_COLLECTION, projectId);
+        const projectDoc = await getDoc(projectRef);
+        
+        if (!projectDoc.exists()) {
+          console.error('Project not found');
+          return null;
+        }
+        
+        const projectData = projectDoc.data() as Project;
+        
+        // Check if user is the owner
+        if (projectData.ownerId !== userId) {
+          console.error('Only the project owner can remove collaborators');
+          return null;
+        }
+        
+        // Remove the collaborator from the project
+        const collaborators = projectData.collaborators || [];
+        const updatedCollaborators = collaborators.filter(c => c.id !== collaboratorId);
+        
+        // Update the project
+        await updateDoc(projectRef, {
+          collaborators: updatedCollaborators,
+          updatedAt: new Date().toISOString()
+        });
+        
+        // Get the updated project
+        const updatedProjectDoc = await getDoc(projectRef);
+        return updatedProjectDoc.data() as Project;
+      } catch (error) {
+        console.error('Error removing collaborator:', error);
+        return null;
+      }
+    }
+    
+    /**
+     * Get all projects a user can collaborate on
+     * @param userId The ID of the user
+     * @returns An array of projects the user can collaborate on
+     */
+    async getCollaborativeProjects(userId: string): Promise<Project[]> {
+      try {
+        // Get projects where user is a collaborator
+        const collaboratorQuery = query(
+          collection(firebaseDb, PROJECTS_COLLECTION),
+          where('collaborators', 'array-contains', { id: userId }),
+          orderBy('updatedAt', 'desc')
+        );
+        
+        const collaboratorSnapshot = await getDocs(collaboratorQuery);
+        
+        // Get projects where user is the owner and collaboration is enabled
+        const ownerQuery = query(
+          collection(firebaseDb, PROJECTS_COLLECTION),
+          where('ownerId', '==', userId),
+          where('isCollaborative', '==', true),
+          orderBy('updatedAt', 'desc')
+        );
+        
+        const ownerSnapshot = await getDocs(ownerQuery);
+        
+        // Combine the results
+        const projects: Project[] = [];
+        
+        collaboratorSnapshot.forEach(doc => {
+          projects.push({ id: doc.id, ...doc.data() } as Project);
+        });
+        
+        ownerSnapshot.forEach(doc => {
+          // Avoid duplicates
+          if (!projects.some(p => p.id === doc.id)) {
+            projects.push({ id: doc.id, ...doc.data() } as Project);
+          }
+        });
+        
+        // Sort by updatedAt
+        projects.sort((a, b) => {
+          return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+        });
+        
+        return projects;
+      } catch (error) {
+        console.error('Error getting collaborative projects:', error);
+        return [];
+      }
+    }
+    
+    /**
+     * Update the collaboration session ID for a project
+     * @param projectId The ID of the project
+     * @param sessionId The ID of the collaboration session
+     * @returns Whether the update was successful
+     */
+    async updateCollaborationSession(projectId: string, sessionId: string | null): Promise<boolean> {
+      try {
+        const projectRef = doc(firebaseDb, PROJECTS_COLLECTION, projectId);
+        
+        await updateDoc(projectRef, {
+          collaborationSessionId: sessionId,
+          updatedAt: new Date().toISOString()
+        });
+        
+        return true;
+      } catch (error) {
+        console.error('Error updating collaboration session:', error);
+        return false;
+      }
+    }
+
+    /**
+     * Upload an audio file to Firebase Storage
+     * @param userId The ID of the user uploading the file
+     * @param fileUri The local URI of the file to upload
+     * @param fileName The name to give the file in storage
+     * @param projectId The ID of the project the file belongs to
+     * @param trackId Optional ID of the track the file belongs to
+     * @param onProgress Optional callback for upload progress
+     * @returns The URL of the uploaded file
+     */
+    async uploadAudioFile(
+      userId: string,
+      fileUri: string,
+      fileName: string,
+      projectId: string,
+      trackId?: string,
+      onProgress?: (progress: number) => void
+    ): Promise<{ url: string } | null> {
+      try {
+        console.log(`[DawService] Uploading audio file: ${fileName}`);
+        
+        // Create a reference to the file in Firebase Storage
+        const storagePath = `audio/${userId}/${projectId}/${fileName}`;
+        const storageRef = ref(firebaseStorage, storagePath);
+        
+        // For native platforms
+        if (Platform.OS === 'android' || Platform.OS === 'ios') {
+          // Use React Native Firebase for native platforms
+          const reference = storage_lib().ref(storagePath);
+          const task = reference.putFile(fileUri);
+          
+          // Handle progress if callback provided
+          if (onProgress) {
+            task.on('state_changed', snapshot => {
+              const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+              onProgress(progress);
+            });
+          }
+          
+          // Wait for upload to complete
+          await task;
+        } else {
+          // For web, use the web SDK
+          const storageRef = ref(storage, storagePath);
+          // Web doesn't have putFile, use uploadBytes instead
+          const fileBlob = await fetch(fileUri).then(r => r.blob());
+          const uploadTask = uploadBytes(storageRef, fileBlob);
+          
+          // Handle progress if callback provided
+          if (onProgress) {
+            // Web doesn't support progress directly, simulate it
+            onProgress(0);
+            setTimeout(() => onProgress(50), 500);
+          }
+          
+          // Wait for upload to complete
+          await uploadTask;
+          if (onProgress) {
+            onProgress(100);
+          }
+        }
+        
+        // Get the download URL
+        const downloadURL = await getDownloadURL(storageRef);
+        console.log(`[DawService] File uploaded successfully: ${downloadURL}`);
+        
+        // If a track ID was provided, update the track with the new audio URI
+        if (trackId && projectId) {
+          await this.updateTrackAudio(projectId, trackId, downloadURL);
+        }
+        
+        return { url: downloadURL };
+      } catch (error) {
+        console.error('[DawService] Error uploading audio file:', error);
+        
+        // Check if it's a network error
+        if (diagnoseNetworkError(error)) {
+          throw new Error('Network error: Please check your internet connection');
+        }
+        
+        throw error;
+      }
+    }
+    
+    /**
+     * Update a track with a new audio URI
+     * @param projectId The ID of the project
+     * @param trackId The ID of the track to update
+     * @param audioUri The new audio URI
+     */
+    async updateTrackAudio(projectId: string, trackId: string, audioUri: string): Promise<void> {
+      try {
+        console.log(`[DawService] Updating track ${trackId} with audio URI: ${audioUri}`);
+        
+        // Get the project document reference
+        const projectRef = doc(firebaseDb, PROJECTS_COLLECTION, projectId);
+        
+        // Get the current project data
+        const projectDoc = await getDoc(projectRef);
+        
+        if (!projectDoc.exists()) {
+          throw new Error(`Project ${projectId} not found`);
+        }
+        
+        const projectData = projectDoc.data() as Project;
+        
+        // Find the track and update its audio URI
+        const updatedTracks = projectData.tracks.map(track => {
+          if (track.id === trackId) {
+            return {
+              ...track,
+              audioUri: audioUri,
+              updatedAt: new Date().toISOString()
+            };
+          }
+          return track;
+        });
+        
+        // Update the project with the modified tracks
+        await updateDoc(projectRef, {
+          tracks: updatedTracks,
+          updatedAt: new Date().toISOString()
+        });
+        
+        console.log(`[DawService] Track ${trackId} updated successfully`);
+      } catch (error) {
+        console.error('[DawService] Error updating track audio:', error);
+        throw error;
+      }
+    }
+
+    /**
+     * Update an existing project with new data
+     * @param project The updated project data
+     * @returns Promise resolving to the updated project or null on failure
+     */
+    async updateProject(project: Project): Promise<Project | null> {
+      try {
+        console.log(`[DawService] Updating project: ${project.id}`);
+        
+        if (!project.id) {
+          console.error('[DawService] Cannot update project without ID');
+          return null;
+        }
+        
+        // Update the updatedAt timestamp
+        const updatedProject = {
+          ...project,
+          updatedAt: new Date().toISOString()
+        };
+        
+        // Reference to the project document
+        const projectRef = doc(firebaseDb, PROJECTS_COLLECTION, project.id);
+        
+        // Update the document in Firestore
+        await updateDoc(projectRef, updatedProject);
+        
+        console.log(`[DawService] Project ${project.id} updated successfully`);
+        
+        return updatedProject;
+      } catch (error) {
+        console.error('[DawService] Error updating project:', error);
+        
+        if (diagnoseNetworkError(error)) {
+          console.log('[DawService] Network error detected, trying offline update');
+          
+          // Implement offline handling if needed
+          // For now, just return the project as if it was updated
+          return project;
+        }
+        
+        throw error;
+      }
     }
 }
 

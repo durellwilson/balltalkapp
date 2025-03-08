@@ -13,13 +13,26 @@ export interface Track {
     muted?: boolean;
   }
 
-  export interface Project {
+export interface Collaborator {
+  id: string;
+  displayName: string;
+  email?: string;
+  role: 'owner' | 'editor' | 'viewer';
+  joinedAt: string;
+  lastActive?: string;
+}
+
+export interface Project {
     id: string;
     name: string;
     tempo: number; // BPM
     tracks: Track[];
     createdAt: string;
     updatedAt: string;
+    ownerId?: string; // ID of the user who created the project
+    collaborators?: Collaborator[]; // List of collaborators on the project
+    isCollaborative?: boolean; // Whether the project is open for collaboration
+    collaborationSessionId?: string; // ID of the active collaboration session
 }
 
 export interface AudioRecording {

@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { safePrint } from '../utils/errorDebugger';
+import { createShadow } from '../utils/shadowStyles';
 
 interface SongCardProps {
   title: string;
@@ -56,8 +57,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'white',
     borderRadius: 8,
     marginBottom: 12,
-    boxShadow: '0px 2px 4px 0px rgba(0, 0, 0, 0.1)',
-    elevation: 2, // Keep elevation for Android
+    ...createShadow(0, 2, 4, 0.1),
   },
   infoContainer: {
     flex: 1,

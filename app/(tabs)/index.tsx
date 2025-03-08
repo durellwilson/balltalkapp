@@ -163,9 +163,9 @@ const TabsHome = () => {
         {!user && (
           <TouchableOpacity
             style={styles.signupButton}
-            onPress={() => router.push('/signup')}
+            onPress={() => router.push('/(auth)/login')}
           >
-            <Text style={styles.signupButtonText}>Sign Up</Text>
+            <Text style={styles.signupButtonText}>Sign In / Sign Up</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -177,7 +177,12 @@ const TabsHome = () => {
           <Text style={styles.viewAll}>View Examples</Text>
         </TouchableOpacity>
       </View>
-      <AthleteDashboard limit={2} showTitle={false} />
+      <AthleteDashboard 
+        limit={2} 
+        showTitle={false} 
+        onNavigateToProfile={() => router.push('/athlete-profile')}
+        onNavigateToStudio={() => router.push('/studio')}
+      />
       
       {/* Core Features Grid */}
       <View style={styles.sectionHeader}>

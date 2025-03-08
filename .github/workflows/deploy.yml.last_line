@@ -1,0 +1,1 @@
+projectId: ${{ secrets.FIREBASE_PROJECT_ID }}

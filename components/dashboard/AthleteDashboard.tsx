@@ -17,14 +17,47 @@ import SubscriptionService from '../../services/SubscriptionService';
 import { Theme } from '../../constants/Theme'; // Import Theme
 import { AntDesign, MaterialIcons, Ionicons, FontAwesome5 } from '@expo/vector-icons';
 import { router } from 'expo-router';
+import Colors from '../../constants/Colors';
 
-interface AthleteDashboardProps {
-  onNavigateToProfile: () => void;
-  onNavigateToStudio: () => void;
-  theme: Theme; // Add theme prop
+// Define a default theme using Colors
+const defaultTheme = {
+  colors: {
+    primary: Colors.primary,
+    secondary: Colors.secondary,
+    background: '#f5f5f5',
+    text: '#212529',
+    textSecondary: '#666',
+    border: '#f0f0f0',
+  }
+};
+
+// Define the Theme interface
+interface Theme {
+  colors: {
+    primary: string;
+    secondary?: string;
+    background?: string;
+    text?: string;
+    textSecondary?: string;
+    border?: string;
+  };
 }
 
-const AthleteDashboard = ({ onNavigateToProfile, onNavigateToStudio, theme }: AthleteDashboardProps) => {
+interface AthleteDashboardProps {
+  onNavigateToProfile?: () => void;
+  onNavigateToStudio?: () => void;
+  theme?: Theme; // Make theme prop optional
+  limit?: number; // Optional limit for number of athletes to show
+  showTitle?: boolean; // Optional flag to show/hide the section title
+}
+
+const AthleteDashboard = ({ 
+  onNavigateToProfile = () => {}, 
+  onNavigateToStudio = () => {}, 
+  theme = defaultTheme, // Use default theme if not provided
+  limit,
+  showTitle = true
+}: AthleteDashboardProps) => {
   const { user } = useAuth();
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -42,24 +75,63 @@ const AthleteDashboard = ({ onNavigateToProfile, onNavigateToStudio, theme }: At
   }, [user?.uid]);
 
   const loadDashboardData = async () => {
-    if (!user?.uid) return;
+    if (!user?.uid) {
+      setIsLoading(false);
+      return;
+    }
 
     setIsLoading(true);
     try {
+      console.log('Loading dashboard data for user:', user.uid);
+      
       // Get user profile data
-      const userData = await AuthService.getUserDocument(user.uid);
+      let userData;
+      try {
+        userData = await AuthService.getUserDocument(user.uid);
+        console.log('User profile data loaded:', userData ? 'success' : 'not found');
+      } catch (profileError) {
+        console.error('Error loading user profile:', profileError);
+        userData = {
+          displayName: user.displayName || 'Athlete',
+          email: user.email,
+          uid: user.uid,
+          role: 'athlete',
+          createdAt: new Date().toISOString()
+        };
+      }
       setUserProfile(userData);
 
       // Get verification status
-      const verificationData = await VerificationService.getUserVerificationStatus(user.uid);
+      let verificationData;
+      try {
+        verificationData = await VerificationService.getUserVerificationStatus(user.uid);
+        console.log('Verification status loaded:', verificationData);
+      } catch (verificationError) {
+        console.error('Error loading verification status:', verificationError);
+        verificationData = { isVerified: false, status: 'none' };
+      }
       setVerificationStatus(verificationData);
 
       // Get subscriber count
-      const subscribers = await SubscriptionService.getAthleteSubscribers(user.uid);
+      let subscribers = [];
+      try {
+        subscribers = await SubscriptionService.getAthleteSubscribers(user.uid);
+        console.log('Subscriber count loaded:', subscribers.length);
+      } catch (subscriberError) {
+        console.error('Error loading subscribers:', subscriberError);
+        subscribers = [];
+      }
       setSubscriberCount(subscribers.length);
 
       // Get recent songs
-      const songs = await SongService.getSongsByArtist(user.uid);
+      let songs = [];
+      try {
+        songs = await SongService.getSongsByArtist(user.uid);
+        console.log('Songs loaded:', songs.length);
+      } catch (songsError) {
+        console.error('Error loading songs:', songsError);
+        songs = [];
+      }
       setRecentSongs(songs.slice(0, 3)); // Get only the 3 most recent songs
 
       // Calculate total plays
@@ -68,7 +140,24 @@ const AthleteDashboard = ({ onNavigateToProfile, onNavigateToStudio, theme }: At
       
     } catch (error) {
       console.error('Error loading dashboard data:', error);
+      // Set fallback data to prevent UI from being stuck in loading state
+      if (!userProfile) {
+        setUserProfile({
+          displayName: user.displayName || 'Athlete',
+          email: user.email,
+          uid: user.uid,
+          role: 'athlete',
+          createdAt: new Date().toISOString()
+        });
+      }
+      if (verificationStatus.status === 'none') {
+        setVerificationStatus({ isVerified: false, status: 'none' });
+      }
+      if (recentSongs.length === 0) {
+        setRecentSongs([]);
+      }
     } finally {
+      // Always set loading to false, even if there are errors
       setIsLoading(false);
       setRefreshing(false);
     }
@@ -79,49 +168,61 @@ const AthleteDashboard = ({ onNavigateToProfile, onNavigateToStudio, theme }: At
     loadDashboardData();
   };
 
+  // Get a welcome message based on the time of day
+  const getWelcomeMessage = () => {
+    const hour = new Date().getHours();
+    if (hour < 12) {
+      return "Good morning! Ready to create some music?";
+    } else if (hour < 18) {
+      return "Good afternoon! How's your day going?";
+    } else {
+      return "Good evening! Time to make some beats?";
+    }
+  };
+
   const renderWelcomeSection = () => {
-    const displayName = user?.displayName || user?.username || 'Athlete';
-    const isVerified = verificationStatus.isVerified;
-    
     return (
       <View style={styles.welcomeSection}>
         <View style={styles.welcomeHeader}>
           <View style={styles.welcomeHeaderText}>
-            <Text style={styles.welcomeText}>
-              Welcome, <Text style={styles.nameText}>{displayName}</Text>
-              {isVerified && <MaterialIcons name="verified" size={20} color={theme.colors.primary} style={{marginLeft: 4}} />}
-            </Text>
-            <Text style={styles.welcomeSubtext}>
-              Your athlete dashboard
-            </Text>
+            {showTitle && (
+              <>
+                <Text style={styles.welcomeText}>
+                  Welcome back, <Text style={styles.nameText}>{user?.displayName || 'Athlete'}</Text>
+                </Text>
+                <Text style={styles.welcomeSubtext}>
+                  {getWelcomeMessage()}
+                </Text>
+              </>
+            )}
           </View>
           <TouchableOpacity 
             style={styles.editProfileButton}
             onPress={onNavigateToProfile}
           >
-            <MaterialIcons name="edit" size={16} color={theme.colors.primary} />
             <Text style={styles.editProfileText}>Edit Profile</Text>
+            <Ionicons name="chevron-forward" size={16} color={theme.colors.primary} />
           </TouchableOpacity>
         </View>
-        
-        {!isVerified && verificationStatus.status !== 'pending' && (
-          <TouchableOpacity 
+
+        {!user?.isVerified ? (
+          <TouchableOpacity
             style={styles.verificationButton}
-            onPress={onNavigateToProfile}
+            onPress={() => router.push('/verification-test')}
           >
-            <MaterialIcons name="verified" size={20} color="white" />
-            <Text style={styles.verificationButtonText}>Verify Athlete Status</Text>
+            <Ionicons name="shield-checkmark" size={20} color="white" />
+            <Text style={styles.verificationButtonText}>
+              Verify Your Athlete Status
+            </Text>
           </TouchableOpacity>
-        )}
-        
-        {verificationStatus.status === 'pending' && (
+        ) : user?.verificationStatus === 'pending' ? (
           <View style={styles.verificationPendingBanner}>
-            <Ionicons name="time-outline" size={20} color="#f39c12" />
+            <Ionicons name="time" size={20} color="#6c757d" />
             <Text style={styles.verificationPendingText}>
-              Your verification is pending. We'll notify you once it's approved.
+              Your verification is being processed. We'll notify you once it's complete.
             </Text>
           </View>
-        )}
+        ) : null}
       </View>
     );
   };
@@ -129,7 +230,9 @@ const AthleteDashboard = ({ onNavigateToProfile, onNavigateToStudio, theme }: At
   const renderStatsSection = () => {
     return (
       <View style={styles.statsSection}>
-        <Text style={styles.sectionTitle}>Your Stats</Text>
+        {showTitle && (
+          <Text style={styles.sectionTitle}>Your Stats</Text>
+        )}
         <View style={styles.statsGrid}>
           <View style={styles.statCard}>
             <Text style={styles.statValue}>{subscriberCount}</Text>
@@ -155,35 +258,44 @@ const AthleteDashboard = ({ onNavigateToProfile, onNavigateToStudio, theme }: At
           <FontAwesome5 name="music" size={40} color="#ccc" />
           <Text style={styles.emptyMusicTitle}>No Music Yet</Text>
           <Text style={styles.emptyMusicText}>
-            Start creating and sharing your music with fans
+            You haven't created any music yet. Head to the studio to get started!
           </Text>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.createMusicButton}
             onPress={onNavigateToStudio}
           >
-            <Text style={styles.createMusicButtonText}>Create Music</Text>
+            <Text style={styles.createMusicButtonText}>Go to Studio</Text>
           </TouchableOpacity>
         </View>
       );
     }
-    
+
+    // Apply limit if provided
+    const songsToShow = limit ? recentSongs.slice(0, limit) : recentSongs;
+
     return (
       <View style={styles.recentMusicSection}>
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Your Recent Music</Text>
-          <TouchableOpacity>
-            <Text style={styles.seeAllText}>See All</Text>
-          </TouchableOpacity>
-        </View>
-        
-        {recentSongs.map((song, index) => (
-          <TouchableOpacity key={index} style={styles.songCard}>
+        {showTitle && (
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Recent Music</Text>
+            <TouchableOpacity onPress={() => router.push('/songs')}>
+              <Text style={styles.seeAllText}>See All</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {songsToShow.map((song) => (
+          <View key={song.id} style={styles.songCard}>
             <View style={styles.songThumbnail}>
-              {song.coverArtUrl ? (
-                <Image source={{ uri: song.coverArtUrl }} style={styles.songImage} />
+              {song.coverUrl ? (
+                <Image
+                  source={{ uri: song.coverUrl }}
+                  style={styles.songImage}
+                  resizeMode="cover"
+                />
               ) : (
                 <View style={styles.songImagePlaceholder}>
-                  <FontAwesome5 name="music" size={24} color="#ccc" />
+                  <FontAwesome5 name="music" size={20} color="#999" />
                 </View>
               )}
             </View>
@@ -191,24 +303,24 @@ const AthleteDashboard = ({ onNavigateToProfile, onNavigateToStudio, theme }: At
               <Text style={styles.songTitle}>{song.title}</Text>
               <Text style={styles.songGenre}>{song.genre}</Text>
               <View style={styles.songStats}>
-                <Text style={styles.songStatText}>
-                  <Ionicons name="play" size={12} color="#666" /> {song.playCount || 0}
-                </Text>
-                <Text style={styles.songStatText}>
-                  <Ionicons name="heart" size={12} color="#666" /> {song.likeCount || 0}
-                </Text>
+                <View style={styles.statItem}>
+                  <Ionicons name="play" size={14} color="#999" />
+                  <Text style={styles.statValue}>{song.playCount || 0}</Text>
+                </View>
+                <View style={styles.statItem}>
+                  <Ionicons name="heart" size={14} color="#999" />
+                  <Text style={styles.statValue}>{song.likeCount || 0}</Text>
+                </View>
               </View>
             </View>
-            <MaterialIcons name="more-vert" size={24} color="#666" />
-          </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.playSongButton}
+              onPress={() => router.push(`/songs/${song.id}`)}
+            >
+              <Ionicons name="play-circle" size={36} color={theme.colors.primary} />
+            </TouchableOpacity>
+          </View>
         ))}
-        
-        <TouchableOpacity 
-          style={styles.createMusicButton}
-          onPress={onNavigateToStudio}
-        >
-          <Text style={styles.createMusicButtonText}>Create New Music</Text>
-        </TouchableOpacity>
       </View>
     );
   };
@@ -216,51 +328,54 @@ const AthleteDashboard = ({ onNavigateToProfile, onNavigateToStudio, theme }: At
   const renderQuickActionsSection = () => {
     return (
       <View style={styles.quickActionsSection}>
-        <Text style={styles.sectionTitle}>Quick Actions</Text>
-        
-        <TouchableOpacity style={styles.actionCard} onPress={onNavigateToStudio}>
-          <View style={[styles.actionIconContainer, { backgroundColor: '#e6f7ff' }]}>
-            <Ionicons name="mic" size={24} color="#0099ff" />
-          </View>
-          <View style={styles.actionContent}>
-            <Text style={styles.actionTitle}>Record Music</Text>
-            <Text style={styles.actionDescription}>Create new tracks in the studio</Text>
-          </View>
-          <MaterialIcons name="chevron-right" size={24} color="#666" />
-        </TouchableOpacity>
-        
-        <TouchableOpacity style={styles.actionCard}>
-          <View style={[styles.actionIconContainer, { backgroundColor: '#fff0e6' }]}>
-            <Ionicons name="people" size={24} color="#ff8c00" />
-          </View>
-          <View style={styles.actionContent}>
-            <Text style={styles.actionTitle}>Manage Subscribers</Text>
-            <Text style={styles.actionDescription}>View and interact with your fans</Text>
-          </View>
-          <MaterialIcons name="chevron-right" size={24} color="#666" />
-        </TouchableOpacity>
-        
-        <TouchableOpacity style={styles.actionCard}>
-          <View style={[styles.actionIconContainer, { backgroundColor: '#e6ffe6' }]}>
-            <Ionicons name="stats-chart" size={24} color="#00cc00" />
-          </View>
-          <View style={styles.actionContent}>
-            <Text style={styles.actionTitle}>Analytics</Text>
-            <Text style={styles.actionDescription}>Track your music performance</Text>
-          </View>
-          <MaterialIcons name="chevron-right" size={24} color="#666" />
-        </TouchableOpacity>
-        
-        <TouchableOpacity style={styles.actionCard}>
-          <View style={[styles.actionIconContainer, { backgroundColor: '#f0e6ff' }]}>
-            <Ionicons name="chatbubbles" size={24} color="#8c00ff" />
-          </View>
-          <View style={styles.actionContent}>
-            <Text style={styles.actionTitle}>Messages</Text>
-            <Text style={styles.actionDescription}>Communicate with other athletes</Text>
-          </View>
-          <MaterialIcons name="chevron-right" size={24} color="#666" />
-        </TouchableOpacity>
+        {showTitle && (
+          <Text style={styles.sectionTitle}>Quick Actions</Text>
+        )}
+        <View style={styles.quickActionsGrid}>
+          <TouchableOpacity 
+            style={styles.quickActionCard}
+            onPress={onNavigateToStudio}
+          >
+            <View style={[styles.quickActionIcon, { backgroundColor: '#FF9500' }]}>
+              <Ionicons name="mic" size={24} color="white" />
+            </View>
+            <Text style={styles.quickActionTitle}>Record</Text>
+            <Text style={styles.quickActionSubtitle}>Create new music</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={styles.quickActionCard}
+            onPress={() => router.push('/songs')}
+          >
+            <View style={[styles.quickActionIcon, { backgroundColor: '#5856D6' }]}>
+              <Ionicons name="musical-notes" size={24} color="white" />
+            </View>
+            <Text style={styles.quickActionTitle}>My Songs</Text>
+            <Text style={styles.quickActionSubtitle}>Manage your music</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={styles.quickActionCard}
+            onPress={() => router.push('/community')}
+          >
+            <View style={[styles.quickActionIcon, { backgroundColor: '#34C759' }]}>
+              <Ionicons name="people" size={24} color="white" />
+            </View>
+            <Text style={styles.quickActionTitle}>Community</Text>
+            <Text style={styles.quickActionSubtitle}>Connect with others</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={styles.quickActionCard}
+            onPress={onNavigateToProfile}
+          >
+            <View style={[styles.quickActionIcon, { backgroundColor: '#007AFF' }]}>
+              <Ionicons name="person" size={24} color="white" />
+            </View>
+            <Text style={styles.quickActionTitle}>Profile</Text>
+            <Text style={styles.quickActionSubtitle}>Edit your profile</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     );
   };
@@ -269,7 +384,7 @@ const AthleteDashboard = ({ onNavigateToProfile, onNavigateToStudio, theme }: At
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={theme.colors.primary} />
-        <Text style={styles.loadingText}>Loading your dashboard...</Text>
+        <Text style={styles.loadingText}>Loading dashboard...</Text>
       </View>
     );
   }
@@ -279,7 +394,12 @@ const AthleteDashboard = ({ onNavigateToProfile, onNavigateToStudio, theme }: At
       style={styles.container}
       contentContainerStyle={styles.content}
       refreshControl={
-        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          colors={[theme.colors.primary]}
+          tintColor={theme.colors.primary}
+        />
       }
     >
       {renderWelcomeSection()}
@@ -293,7 +413,7 @@ const AthleteDashboard = ({ onNavigateToProfile, onNavigateToStudio, theme }: At
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: theme.colors.background,
+    backgroundColor: '#f5f5f5',
   },
   content: {
     padding: 16,
@@ -315,7 +435,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 20,
     marginBottom: 16,
-    shadowColor: theme.colors.border,
+    shadowColor: '#dee2e6',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
@@ -333,12 +453,12 @@ const styles = StyleSheet.create({
   welcomeText: {
     fontSize: 18,
     fontWeight: '500',
-    color: theme.colors.text,
+    color: '#212529',
     marginBottom: 4,
   },
   nameText: {
     fontWeight: 'bold',
-    color: theme.colors.primary,
+    color: '#007bff',
   },
   welcomeSubtext: {
     fontSize: 14,
@@ -349,12 +469,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   editProfileText: {
-    color: theme.colors.primary,
+    color: '#007bff',
     marginLeft: 4,
     fontWeight: '500',
   },
   verificationButton: {
-    backgroundColor: theme.colors.primary,
+    backgroundColor: '#007bff',
     borderRadius: 8,
     flexDirection: 'row',
     alignItems: 'center',
@@ -369,7 +489,7 @@ const styles = StyleSheet.create({
     marginLeft: 8,
   },
   verificationPendingBanner: {
-    backgroundColor: theme.colors.surface,
+    backgroundColor: '#f9f9f9',
     borderRadius: 8,
     flexDirection: 'row',
     alignItems: 'center',
@@ -377,7 +497,7 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
   verificationPendingText: {
-    color: theme.colors.textSecondary,
+    color: '#6c757d',
     marginLeft: 8,
     flex: 1,
   },
@@ -386,7 +506,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 16,
     marginBottom: 16,
-    shadowColor: theme.colors.border,
+    shadowColor: '#dee2e6',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
@@ -404,7 +524,7 @@ const styles = StyleSheet.create({
   },
   statCard: {
     flex: 1,
-    backgroundColor: theme.colors.surface,
+    backgroundColor: '#f9f9f9',
     borderRadius: 8,
     padding: 16,
     alignItems: 'center',
@@ -413,7 +533,7 @@ const styles = StyleSheet.create({
   statValue: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: theme.colors.primary,
+    color: '#007bff',
     marginBottom: 4,
   },
   statLabel: {
@@ -421,12 +541,12 @@ const styles = StyleSheet.create({
     color: '#666',
   },
   emptyMusicSection: {
-    backgroundColor: theme.colors.surface,
+    backgroundColor: '#f9f9f9',
     borderRadius: 12,
     padding: 24,
     marginBottom: 16,
     alignItems: 'center',
-    shadowColor: theme.colors.border,
+    shadowColor: '#dee2e6',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
@@ -437,7 +557,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginTop: 12,
     marginBottom: 8,
-    color: theme.colors.text,
+    color: '#212529',
   },
   emptyMusicText: {
     fontSize: 14,
@@ -446,7 +566,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   createMusicButton: {
-    backgroundColor: theme.colors.primary,
+    backgroundColor: '#007bff',
     borderRadius: 8,
     paddingVertical: 12,
     paddingHorizontal: 20,
@@ -459,11 +579,11 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   recentMusicSection: {
-    backgroundColor: theme.colors.surface,
+    backgroundColor: '#f9f9f9',
     borderRadius: 12,
     padding: 16,
     marginBottom: 16,
-    shadowColor: theme.colors.border,
+    shadowColor: '#dee2e6',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
@@ -476,7 +596,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   seeAllText: {
-    color: theme.colors.primary,
+    color: '#007bff',
     fontWeight: '500',
   },
   songCard: {
@@ -511,7 +631,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '500',
     marginBottom: 4,
-    color: theme.colors.text,
+    color: '#212529',
   },
   songGenre: {
     fontSize: 14,
@@ -521,46 +641,58 @@ const styles = StyleSheet.create({
   songStats: {
     flexDirection: 'row',
   },
-  songStatText: {
+  statItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  statValue: {
     fontSize: 12,
     color: '#666',
-    marginRight: 12,
+    marginLeft: 4,
+  },
+  playSongButton: {
+    padding: 8,
   },
   quickActionsSection: {
     backgroundColor: 'white',
     borderRadius: 12,
     padding: 16,
-    shadowColor: theme.colors.border,
+    shadowColor: '#dee2e6',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
   },
-  actionCard: {
+  quickActionsGrid: {
     flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    marginTop: 12,
   },
-  actionIconContainer: {
+  quickActionCard: {
+    width: '48%',
+    backgroundColor: '#f9f9f9',
+    borderRadius: 8,
+    padding: 16,
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  quickActionIcon: {
     width: 40,
     height: 40,
     borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 12,
+    marginBottom: 8,
   },
-  actionContent: {
-    flex: 1,
-  },
-  actionTitle: {
+  quickActionTitle: {
     fontSize: 16,
-    fontWeight: '500',
+    fontWeight: 'bold',
     marginBottom: 4,
     color: '#333',
   },
-  actionDescription: {
+  quickActionSubtitle: {
     fontSize: 14,
     color: '#666',
   },

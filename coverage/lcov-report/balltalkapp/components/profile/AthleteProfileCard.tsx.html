@@ -891,7 +891,7 @@ interface Theme {
 }
 &nbsp;
 // Define metric type for athlete statistics
-type Metric = {
+export type AthleteMetric = {  // Add 'export'
   label: string;
   value: number;
   icon: string;
@@ -899,7 +899,7 @@ type Metric = {
 };
 &nbsp;
 // Props interface for the component
-interface AthleteProfileCardProps {
+export interface AthleteProfileCardProps { // Add 'export'
   id: string;
   name: string;
   username: string;
@@ -911,7 +911,7 @@ interface AthleteProfileCardProps {
   verified?: boolean;
   isAuthenticated?: boolean;
   isFollowing?: boolean;
-  metrics?: Metric[];
+  metrics?: AthleteMetric[];
   onProfilePress?: () =&gt; void;
   onMessagePress?: () =&gt; void;
   onMusicPress?: () =&gt; void;
@@ -995,40 +995,40 @@ const AthleteProfileCard: React.FC&lt;AthleteProfileCardProps&gt; = <span class=
   const avatarSource = <span class="cstat-no" title="statement not covered" >typeof avatar === 'string' &amp;&amp; avatar</span>
     ? { uri: avatar }
     : typeof avatar === 'object' &amp;&amp; avatar !== null
-      ? avatar 
+      ? avatar
       : require('../../assets/images/adaptive-icon.png');
 &nbsp;
 <span class="cstat-no" title="statement not covered" >  return (</span>
     &lt;View style={[styles.card, { backgroundColor: theme.colors.card }]}&gt;
       {/* Card Header - Avatar, Name, Verification */}
       &lt;View style={styles.cardHeader}&gt;
-        &lt;TouchableOpacity 
+        &lt;TouchableOpacity
           style={styles.profileSection}
           onPress={onProfilePress}
         &gt;
           &lt;View style={styles.avatarContainer}&gt;
-            &lt;Image 
+            &lt;Image
               source={avatarSource}
               style={styles.avatar}
               resizeMode="cover"
             /&gt;
           &lt;/View&gt;
-          
+&nbsp;
           &lt;View style={styles.nameContainer}&gt;
             &lt;View style={styles.nameRow}&gt;
               &lt;Text style={styles.name}&gt;{name}&lt;/Text&gt;
               {verified &amp;&amp; (
-                &lt;MaterialIcons 
-                  name="verified" 
-                  size={16} 
-                  color={theme.colors.primary} 
+                &lt;MaterialIcons
+                  name="verified"
+                  size={16}
+                  color={theme.colors.primary}
                   style={styles.verifiedIcon}
                 /&gt;
               )}
             &lt;/View&gt;
-            
+&nbsp;
             &lt;Text style={styles.username}&gt;{username}&lt;/Text&gt;
-            
+&nbsp;
             &lt;View style={styles.sportRow}&gt;
               {getSportIcon(sport)}
               &lt;Text style={styles.sportText}&gt;
@@ -1039,7 +1039,7 @@ const AthleteProfileCard: React.FC&lt;AthleteProfileCardProps&gt; = <span class=
             &lt;/View&gt;
           &lt;/View&gt;
         &lt;/TouchableOpacity&gt;
-        
+&nbsp;
         {isAuthenticated ? (
           &lt;View style={[styles.authenticatedBadge, { backgroundColor: theme.colors.primary }]}&gt;
             &lt;MaterialIcons name="verified-user" size={12} color="white" /&gt;
@@ -1056,19 +1056,19 @@ const AthleteProfileCard: React.FC&lt;AthleteProfileCardProps&gt; = <span class=
           &lt;/TouchableOpacity&gt;
         ) : null}
       &lt;/View&gt;
-      
+&nbsp;
       {/* Card Metrics - Statistics */}
       {metrics.length &gt; 0 &amp;&amp; (
         &lt;View style={styles.metricsContainer}&gt;
           {metrics.map(<span class="fstat-no" title="function not covered" >(m</span>etric, index) =&gt; (
-<span class="cstat-no" title="statement not covered" >            &lt;View </span>
-              key={`${metric.label}-${index}`} 
+<span class="cstat-no" title="statement not covered" >            &lt;View</span>
+              key={`${metric.label}-${index}`}
               style={styles.metricItem}
             &gt;
-              &lt;FontAwesome5 
-                name={metric.icon} 
-                size={14} 
-                color={metric.color || '#666'} 
+              &lt;FontAwesome5
+                name={metric.icon}
+                size={14}
+                color={metric.color || '#666'}
                 solid
                 style={styles.metricIcon}
               /&gt;
@@ -1080,7 +1080,7 @@ const AthleteProfileCard: React.FC&lt;AthleteProfileCardProps&gt; = <span class=
           ))}
         &lt;/View&gt;
       )}
-      
+&nbsp;
       {/* Card Actions - Follow, Message, Music */}
       &lt;View style={styles.actionContainer}&gt;
         {onFollowPress &amp;&amp; (
@@ -1088,8 +1088,8 @@ const AthleteProfileCard: React.FC&lt;AthleteProfileCardProps&gt; = <span class=
             style={[
               styles.actionButton,
               styles.followButton,
-              isFollowing 
-                ? { backgroundColor: 'transparent', borderWidth: 1, borderColor: theme.colors.primary } 
+              isFollowing
+                ? { backgroundColor: 'transparent', borderWidth: 1, borderColor: theme.colors.primary }
                 : { backgroundColor: theme.colors.primary }
             ]}
             onPress={onFollowPress}
@@ -1102,7 +1102,7 @@ const AthleteProfileCard: React.FC&lt;AthleteProfileCardProps&gt; = <span class=
             &lt;/Text&gt;
           &lt;/TouchableOpacity&gt;
         )}
-        
+&nbsp;
         {onMessagePress &amp;&amp; (
           &lt;TouchableOpacity
             style={[styles.actionButton, styles.iconButton]}
@@ -1111,7 +1111,7 @@ const AthleteProfileCard: React.FC&lt;AthleteProfileCardProps&gt; = <span class=
             &lt;Ionicons name="chatbubble-outline" size={20} color="#666" /&gt;
           &lt;/TouchableOpacity&gt;
         )}
-        
+&nbsp;
         {onMusicPress &amp;&amp; (
           &lt;TouchableOpacity
             style={[styles.actionButton, styles.iconButton]}
@@ -1273,7 +1273,7 @@ export default AthleteProfileCard;
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2025-03-05T15:42:05.692Z
+                at 2025-03-07T10:44:07.332Z
             </div>
         <script src="../../../prettify.js"></script>
         <script>
