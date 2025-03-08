@@ -15,7 +15,7 @@ export default {
   },
   updates: {
     fallbackToCacheTimeout: 0,
-    url: 'https://u.expo.dev/your-project-id', // Replace with your project ID when available
+    url: 'https://u.expo.dev/balltalk-app',
     enabled: true,
     checkAutomatically: 'ON_LOAD',
   },
@@ -61,7 +61,7 @@ export default {
   ],
   extra: {
     eas: {
-      projectId: 'your-project-id', // Replace with your project ID when available
+      projectId: 'balltalk-app',
     },
   },
   owner: 'balltalk',
