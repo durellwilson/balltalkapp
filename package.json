@@ -37,7 +37,12 @@
     "test:dolby": "node ./scripts/test-dolby-api.js",
     "test:dolby:live": "node ./scripts/test-dolby-api-live.js",
     "test:vocal-isolation": "node ./scripts/test-vocal-isolation.js",
-    "test:batch-processing": "node ./scripts/test-batch-processing.js"
+    "test:batch-processing": "node ./scripts/test-batch-processing.js",
+    "deploy:expo": "node ./scripts/deploy-to-expo.js",
+    "deploy:expo:preview": "eas update --auto --branch preview",
+    "deploy:expo:production": "eas update --auto --branch production",
+    "start:tunnel": "expo start --tunnel",
+    "start:clear:tunnel": "expo start --clear --tunnel"
   },
   "dependencies": {
     "@expo/ngrok": "^4.1.3",
