@@ -43,7 +43,8 @@
     "deploy:expo:production": "eas update --auto --branch production",
     "start:tunnel": "expo start --tunnel",
     "start:clear:tunnel": "expo start --clear --tunnel",
-    "test:app": "node ./scripts/test-app.js"
+    "test:app": "node ./scripts/test-app.js",
+    "test:firebase": "node ./scripts/firebase-test.js"
   },
   "dependencies": {
     "@expo/ngrok": "^4.1.3",
