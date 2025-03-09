@@ -1,6 +1,7 @@
 // Learn more https://docs.expo.io/guides/customizing-metro
 const { getDefaultConfig } = require('@expo/metro-config');
 const path = require('path');
+const fs = require('fs');
 
 // Use the parent directory (project root) instead of __dirname (config directory)
 const projectRoot = path.resolve(__dirname, '..');
@@ -26,6 +27,9 @@ config.resolver.extraNodeModules = {
   '@firebase/firestore': require.resolve('@firebase/firestore'),
   '@firebase/storage': require.resolve('@firebase/storage'),
   '@react-native-community/datetimepicker': path.resolve(projectRoot, 'node_modules/@react-native-community/datetimepicker'),
+  // Add explicit resolution for expo-router
+  'expo-router': path.resolve(projectRoot, 'node_modules/expo-router'),
+  'expo-router/entry': path.resolve(projectRoot, 'node_modules/expo-router/entry.js'),
 };
 
 // Configure server settings for web access
@@ -35,6 +39,12 @@ config.server = {
     return (req, res, next) => {
       // Add CORS headers for web
       res.setHeader('Access-Control-Allow-Origin', '*');
+      
+      // Log requests to help with debugging
+      if (req.url.includes('expo-router') || req.url.includes('entry.bundle')) {
+        console.log(`[Metro] Request: ${req.url}`);
+      }
+      
       return middleware(req, res, next);
     };
   },
@@ -42,6 +52,11 @@ config.server = {
 
 // Add specific configuration for Expo Router
 config.resolver.resolveRequest = (context, moduleName, platform) => {
+  // Log resolution attempts for debugging
+  if (moduleName.includes('expo-router') || moduleName.includes('entry')) {
+    console.log(`[Metro] Resolving: ${moduleName} for platform: ${platform}`);
+  }
+
   // First, let Metro try to resolve it normally
   const defaultResolve = context.resolveRequest;
   if (defaultResolve) {
@@ -55,14 +70,38 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
 
   // Special handling for expo-router/entry
   if (moduleName === 'expo-router/entry') {
-    return {
-      type: 'sourceFile',
-      filePath: path.resolve(projectRoot, 'node_modules/expo-router/entry.js'),
-    };
+    // Check if we have a custom entry point in the temp directory
+    const tempEntryPath = path.resolve(projectRoot, 'temp/entry.js');
+    if (fs.existsSync(tempEntryPath)) {
+      console.log(`[Metro] Using custom entry point: ${tempEntryPath}`);
+      return {
+        type: 'sourceFile',
+        filePath: tempEntryPath,
+      };
+    }
+    
+    // Fall back to the standard entry point
+    const standardEntryPath = path.resolve(projectRoot, 'node_modules/expo-router/entry.js');
+    if (fs.existsSync(standardEntryPath)) {
+      console.log(`[Metro] Using standard entry point: ${standardEntryPath}`);
+      return {
+        type: 'sourceFile',
+        filePath: standardEntryPath,
+      };
+    }
+    
+    console.error(`[Metro] Could not find entry point for expo-router/entry`);
   }
 
   // Let Metro handle the default case
   return undefined;
+};
+
+// Add transformer options for better error reporting
+config.transformer.minifierConfig = {
+  ...config.transformer.minifierConfig,
+  keep_classnames: true,
+  keep_fnames: true,
 };
 
 module.exports = config; 
