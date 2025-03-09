@@ -2,8 +2,11 @@
 const { getDefaultConfig } = require('@expo/metro-config');
 const path = require('path');
 
+// Use the parent directory (project root) instead of __dirname (config directory)
+const projectRoot = path.resolve(__dirname, '..');
+
 /** @type {import('expo/metro-config').MetroConfig} */
-const config = getDefaultConfig(__dirname);
+const config = getDefaultConfig(projectRoot);
 
 // Add additional file extensions for web support
 config.resolver.sourceExts.push('mjs');
@@ -22,7 +25,7 @@ config.resolver.extraNodeModules = {
   '@firebase/auth': require.resolve('@firebase/auth'),
   '@firebase/firestore': require.resolve('@firebase/firestore'),
   '@firebase/storage': require.resolve('@firebase/storage'),
-  '@react-native-community/datetimepicker': path.resolve(__dirname, 'node_modules/@react-native-community/datetimepicker'),
+  '@react-native-community/datetimepicker': path.resolve(projectRoot, 'node_modules/@react-native-community/datetimepicker'),
 };
 
 // Configure server settings for web access
