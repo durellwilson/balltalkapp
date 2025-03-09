@@ -12,21 +12,19 @@
     "web-fix": "node ./scripts/fix-web.js",
     "diagnose-router": "node ./scripts/diagnose-expo-router.js",
     "emergency-fix": "node ./scripts/emergency-fix.js",
+    "fix-firebase": "node ./scripts/fix-firebase.js",
     "start:tunnel": "expo start --tunnel",
     "start:clear:tunnel": "expo start --clear --tunnel",
     "start:emulators": "node ./scripts/start-with-emulators.js",
-    
     "build:web": "npx expo export",
     "build:android": "eas build --platform android",
     "build:ios": "eas build --platform ios",
-    
     "deploy": "npm run build:web && firebase deploy --only hosting",
     "deploy:rules": "firebase deploy --only firestore:rules,storage:rules --config firebase/config/firebase.json",
     "deploy:indexes": "node ./scripts/deploy-indexes.js",
     "deploy:expo:preview": "eas update --auto --branch preview --config config/eas.json",
     "deploy:expo:production": "eas update --auto --branch production --config config/eas.json",
     "deploy:test": "npm run build:web && firebase hosting:channel:deploy test --expires 1d --config firebase/config/firebase.json",
-    
     "lint": "expo lint",
     "test": "jest --config config/jest.config.js",
     "test:unit": "jest --config config/jest.config.js",
@@ -34,15 +32,12 @@
     "test:chat": "jest --config config/jest.config.js --testPathPattern=\"__tests__/chat\"",
     "test:audio": "jest --config config/jest.config.js --testPathPattern=\"services/audio|models/audio\"",
     "test:error-handling": "jest --config config/jest.config.js --testPathPattern=\"__tests__/error-handling\"",
-    
     "emulators:setup": "node ./scripts/setup-emulators.js",
     "emulators:seed": "node ./scripts/seed-emulators.js",
     "emulators:start": "firebase emulators:start --import=./firebase/emulator/data --export-on-exit --config firebase/config/firebase.json",
-    
     "cleanup:docs": "node ./scripts/cleanup-docs.js",
     "setup": "node ./scripts/setup-and-run.js",
     "reset-project": "node ./scripts/reset-project.js",
-    
     "verify:chat": "node ./scripts/verify-chat.js",
     "verify:audio": "ts-node scripts/verify-audio-processing.ts",
     "verify:error-handling": "node ./scripts/verify-error-handling.js"
