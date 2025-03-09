@@ -48,8 +48,8 @@ const MAX_RETRY_ATTEMPTS = 3;
 // Base delay for exponential backoff (in milliseconds)
 const BASE_RETRY_DELAY = 1000;
 
-// Use mock implementation for testing
-const USE_MOCK_IMPLEMENTATION = true;
+// Use real implementation
+const USE_MOCK_IMPLEMENTATION = false;
 
 // Mastering profiles
 export enum DolbyMasteringProfile {

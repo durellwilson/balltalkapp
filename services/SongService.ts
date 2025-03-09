@@ -1,7 +1,7 @@
 import { Song, Playlist, SongComment } from '../models/Song';
 import { db, storage } from '../src/lib/firebase';
 import { collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, query, where, orderBy, limit, increment } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
+import { ref, uploadBytes, getDownloadURL, deleteObject, uploadBytesResumable } from 'firebase/storage';
 import { v4 as uuidv4 } from 'uuid';
 
 
@@ -16,20 +16,59 @@ class SongService {
     songData?: Partial<Song>
   ): Promise<Song | null> {
     try {
+      console.log('Starting song upload process...', { artistId, title, genre });
+      console.log('Audio file size:', audioFile.size, 'bytes');
+      if (coverArt) {
+        console.log('Cover art size:', coverArt.size, 'bytes');
+      }
+      
+      // Validate inputs
+      if (!artistId) throw new Error('Artist ID is required');
+      if (!title) throw new Error('Title is required');
+      if (!genre) throw new Error('Genre is required');
+      if (!audioFile || audioFile.size === 0) throw new Error('Valid audio file is required');
+      
       const songId = uuidv4();
       const now = new Date().toISOString();
+      
+      console.log('Generated song ID:', songId);
 
-      // Upload audio file to storage
+      // Upload audio file to storage with progress tracking
       const audioRef = ref(storage, `songs/${artistId}/${songId}/audio.mp3`);
-      await uploadBytes(audioRef, audioFile);
+      console.log('Uploading audio file to:', audioRef.fullPath);
+      
+      // Use uploadBytesResumable for better error handling and progress tracking
+      const audioUploadTask = uploadBytesResumable(audioRef, audioFile);
+      
+      // Wait for the upload to complete
+      const audioSnapshot = await audioUploadTask;
+      console.log('Audio upload complete:', audioSnapshot.metadata);
+      
+      // Get the download URL
       const fileUrl = await getDownloadURL(audioRef);
+      console.log('Audio file URL:', fileUrl);
 
       // Upload cover art if provided
       let coverArtUrl = '';
-      if (coverArt) {
-        const coverArtRef = ref(storage, `songs/${artistId}/${songId}/cover.jpg`);
-        await uploadBytes(coverArtRef, coverArt);
-        coverArtUrl = await getDownloadURL(coverArtRef);
+      if (coverArt && coverArt.size > 0) {
+        try {
+          const coverArtRef = ref(storage, `songs/${artistId}/${songId}/cover.jpg`);
+          console.log('Uploading cover art to:', coverArtRef.fullPath);
+          
+          // Use uploadBytesResumable for better error handling
+          const coverArtUploadTask = uploadBytesResumable(coverArtRef, coverArt);
+          
+          // Wait for the upload to complete
+          const coverArtSnapshot = await coverArtUploadTask;
+          console.log('Cover art upload complete:', coverArtSnapshot.metadata);
+          
+          // Get the download URL
+          coverArtUrl = await getDownloadURL(coverArtRef);
+          console.log('Cover art URL:', coverArtUrl);
+        } catch (coverArtError) {
+          console.error('Error uploading cover art:', coverArtError);
+          // Continue without cover art
+        }
       }
 
       // Create song object
@@ -47,15 +86,19 @@ class SongService {
         ...(coverArtUrl && { coverArtUrl }),
         ...songData
       };
+      
+      console.log('Creating song document in Firestore');
 
       // Save song to Firestore
       const songRef = doc(db, 'songs', songId);
       await setDoc(songRef, newSong);
+      console.log('Song document created successfully');
 
       return newSong;
     } catch (error) {
-      console.error('Error uploading song:', error);
-      return null;
+      console.error('Error in uploadSong:', error);
+      // Rethrow with more context
+      throw new Error(`Failed to upload song: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 

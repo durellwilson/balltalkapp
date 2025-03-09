@@ -6,6 +6,9 @@ export enum NetworkErrorType {
   TIMEOUT = 'TIMEOUT',
   SERVER_ERROR = 'SERVER_ERROR',
   FIREBASE_ERROR = 'FIREBASE_ERROR',
+  FIREBASE_AUTH_ERROR = 'FIREBASE_AUTH_ERROR',
+  FIREBASE_FIRESTORE_ERROR = 'FIREBASE_FIRESTORE_ERROR',
+  FIREBASE_STORAGE_ERROR = 'FIREBASE_STORAGE_ERROR',
   UNKNOWN = 'UNKNOWN',
 }
 
@@ -139,11 +142,32 @@ class NetworkErrorHandler {
       errorDetails.type = NetworkErrorType.SERVER_ERROR;
       errorDetails.message = `Server error: ${error.response.status}`;
       errorDetails.retryable = true;
-    } else if (error?.code?.startsWith('auth/') || error?.code?.startsWith('storage/') || error?.code?.startsWith('firestore/')) {
-      errorDetails.type = NetworkErrorType.FIREBASE_ERROR;
-      errorDetails.message = error.message || 'Firebase operation failed';
-      // Some Firebase errors are not retryable
-      errorDetails.retryable = !['auth/user-disabled', 'auth/invalid-credential'].includes(error.code);
+    } else if (error?.code) {
+      // Enhanced Firebase error handling
+      if (error.code.startsWith('auth/')) {
+        errorDetails.type = NetworkErrorType.FIREBASE_AUTH_ERROR;
+        errorDetails.message = error.message || 'Authentication failed';
+        errorDetails.retryable = ![
+          'auth/user-disabled',
+          'auth/invalid-credential',
+          'auth/user-not-found',
+          'auth/invalid-email'
+        ].includes(error.code);
+      } else if (error.code.startsWith('firestore/')) {
+        errorDetails.type = NetworkErrorType.FIREBASE_FIRESTORE_ERROR;
+        errorDetails.message = error.message || 'Database operation failed';
+        errorDetails.retryable = ![
+          'firestore/permission-denied',
+          'firestore/not-found'
+        ].includes(error.code);
+      } else if (error.code.startsWith('storage/')) {
+        errorDetails.type = NetworkErrorType.FIREBASE_STORAGE_ERROR;
+        errorDetails.message = error.message || 'Storage operation failed';
+        errorDetails.retryable = ![
+          'storage/unauthorized',
+          'storage/object-not-found'
+        ].includes(error.code);
+      }
     }
 
     return errorDetails;
@@ -250,16 +274,14 @@ class NetworkErrorHandler {
       case NetworkErrorType.SERVER_ERROR:
         return 'Our servers are experiencing issues. Please try again later.';
       
-      case NetworkErrorType.FIREBASE_ERROR:
-        // Format Firebase errors in a user-friendly way
-        if (errorDetails.originalError?.code === 'auth/user-not-found') {
-          return 'Account not found. Please check your email or sign up.';
-        } else if (errorDetails.originalError?.code === 'auth/wrong-password') {
-          return 'Incorrect password. Please try again.';
-        } else if (errorDetails.originalError?.code === 'storage/unauthorized') {
-          return 'You don\'t have permission to access this file.';
-        }
-        return 'There was an issue with the service. Please try again.';
+      case NetworkErrorType.FIREBASE_AUTH_ERROR:
+        return 'Authentication failed. Please check your credentials and try again.';
+      
+      case NetworkErrorType.FIREBASE_FIRESTORE_ERROR:
+        return 'Database operation failed. Please try again later.';
+      
+      case NetworkErrorType.FIREBASE_STORAGE_ERROR:
+        return 'Storage operation failed. Please try again later.';
       
       default:
         return 'An unexpected error occurred. Please try again.';

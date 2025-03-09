@@ -20,6 +20,7 @@ import { User } from '../../models/User';
 import { ERROR } from '../../constants/Colors';
 import Colors from '../../constants/Colors';
 import { Audio } from 'expo-av';
+import { useTheme } from '../../hooks/useTheme';
 
 interface SharedTracksViewProps {
   mode: 'received' | 'sent';
@@ -39,6 +40,7 @@ const SharedTracksView: React.FC<SharedTracksViewProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [sound, setSound] = useState<Audio.Sound | null>(null);
   const [playingTrackId, setPlayingTrackId] = useState<string | null>(null);
+  const { theme } = useTheme();
 
   const trackSharingService = new TrackSharingService();
   const songService = new SongService();
@@ -243,7 +245,7 @@ const SharedTracksView: React.FC<SharedTracksViewProps> = ({
             <Image source={{ uri: track.coverArtUrl }} style={styles.trackImage} />
           ) : (
             <View style={[styles.trackImage, styles.placeholderImage]}>
-              <Ionicons name="musical-notes" size={24} color={Colors.textSecondary} />
+              <Ionicons name="musical-notes" size={24} color={theme.textSecondary} />
             </View>
           )}
           
@@ -373,7 +375,7 @@ const SharedTracksView: React.FC<SharedTracksViewProps> = ({
   if (shares.length === 0) {
     return (
       <View style={styles.emptyContainer}>
-        <Ionicons name="share-outline" size={48} color={Colors.textSecondary} />
+        <Ionicons name="share-outline" size={48} color={theme.textSecondary} />
         <Text style={styles.emptyText}>
           {mode === 'received'
             ? 'No tracks have been shared with you yet'
@@ -404,6 +406,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: theme => theme.border,
   },
   errorContainer: {
     flex: 1,
@@ -433,7 +436,7 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   emptyText: {
-    color: Colors.textSecondary,
+    color: theme => theme.textSecondary,
     textAlign: 'center',
     marginTop: 16,
     marginBottom: 24,
@@ -453,7 +456,7 @@ const styles = StyleSheet.create({
   },
   shareItem: {
     flexDirection: 'row',
-    backgroundColor: Colors.card,
+    backgroundColor: theme => theme.cardBackground,
     borderRadius: 12,
     padding: 12,
     marginBottom: 16,
@@ -495,12 +498,12 @@ const styles = StyleSheet.create({
   trackTitle: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: Colors.text,
+    color: theme => theme.text,
     marginBottom: 4,
   },
   artistName: {
     fontSize: 14,
-    color: Colors.textSecondary,
+    color: theme => theme.textSecondary,
     marginBottom: 8,
   },
   shareDetails: {
@@ -577,6 +580,17 @@ const styles = StyleSheet.create({
   },
   revokeButton: {
     backgroundColor: '#f57c00',
+  },
+  divider: {
+    height: 1,
+    backgroundColor: theme => theme.border,
+    marginVertical: 8,
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: theme => theme.text,
+    marginBottom: 8,
   },
 });
 

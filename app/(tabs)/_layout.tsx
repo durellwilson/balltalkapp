@@ -1,96 +1,103 @@
-import { View, useColorScheme } from "react-native";
-import { Tabs } from "expo-router";
+import React from 'react';
+import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { StyleSheet } from 'react-native';
+import { useAuth } from '../../contexts/auth';
 import Colors from '../../constants/Colors';
 
 /**
- * You can explore the built-in icon families and icons on the web at https://icons.expo.fyi/
+ * TabLayout component that handles the bottom tab navigation
+ * Tabs are conditionally rendered based on user role
  */
-function TabBarIcon(props: {
-  name: React.ComponentProps<typeof Ionicons>['name'];
-  color: string;
-}) {
-  return <Ionicons size={28} style={{ marginBottom: -3 }} {...props} />;
-}
-
 export default function TabLayout() {
-  const colorScheme = useColorScheme();
+  const { user } = useAuth();
+  const isAthlete = user?.role === 'athlete';
+  const isFan = user?.role === 'fan';
   
-  // Define tab color based on theme
-  const tabColor = colorScheme === 'dark' ? Colors.theme.dark.text : Colors.PRIMARY;
-
   return (
-    <View style={{ flex: 1, backgroundColor: colorScheme === 'dark' ? '#121212' : '#fff' }}>
-      <Tabs
-        screenOptions={{
-          tabBarActiveTintColor: tabColor,
-          tabBarStyle: { 
-            backgroundColor: colorScheme === 'dark' ? '#121212' : '#fff',
-            borderTopColor: colorScheme === 'dark' ? '#333' : '#e5e5e5',
-            height: 60,
-            paddingBottom: 5,
-            paddingTop: 5,
-          },
-          headerShown: true,
-        }}>
-        <Tabs.Screen
-          name="index"
-          options={{
-            title: 'Home',
-            tabBarIcon: ({ color }) => <TabBarIcon name="home" color={color} />,
-          }}
-        />
+    <Tabs
+      screenOptions={{
+        headerShown: false,
+        tabBarActiveTintColor: Colors.primary,
+        tabBarStyle: { 
+          height: 80, 
+          paddingBottom: 20,
+          borderTopColor: '#E5E5E5',
+          borderTopWidth: 1
+        }
+      }}
+    >
+      {/* Home Tab - Visible to all users */}
+      <Tabs.Screen
+        name="index"
+        options={{
+          title: 'Home',
+          tabBarIcon: ({ color }) => <Ionicons name="home" size={24} color={color} />
+        }}
+      />
+      
+      {/* Studio Tab - Only visible to athletes */}
+      {isAthlete ? (
         <Tabs.Screen
           name="studio"
           options={{
             title: 'Studio',
-            tabBarIcon: ({ color }) => <TabBarIcon name="mic" color={color} />,
+            tabBarIcon: ({ color }) => <Ionicons name="mic" size={24} color={color} />
           }}
         />
+      ) : (
         <Tabs.Screen
-          name="discover"
+          name="studio"
           options={{
-            title: 'Discover',
-            tabBarIcon: ({ color }) => <TabBarIcon name="compass" color={color} />,
+            tabBarButton: () => null
           }}
         />
-        <Tabs.Screen
-          name="profile"
-          options={{
-            title: 'Profile',
-            tabBarIcon: ({ color }) => <TabBarIcon name="person" color={color} />,
-          }}
-        />
-        <Tabs.Screen
-          name="dolby"
-          options={{
-            title: 'Dolby',
-            tabBarIcon: ({ color }) => <TabBarIcon name="musical-notes" color={color} />,
-          }}
-        />
-        <Tabs.Screen
-          name="shared-tracks"
-          options={{
-            title: 'Shared',
-            tabBarIcon: ({ color }) => <TabBarIcon name="people" color={color} />,
-            href: '/shared-tracks',
-          }}
-        />
-        <Tabs.Screen
-          name="vocal-isolation"
-          options={{
-            title: 'Vocals',
-            tabBarIcon: ({ color }) => <TabBarIcon name="mic-outline" color={color} />,
-          }}
-        />
-        <Tabs.Screen
-          name="batch"
-          options={{
-            title: 'Batch',
-            tabBarIcon: ({ color }) => <TabBarIcon name="layers-outline" color={color} />,
-          }}
-        />
-      </Tabs>
-    </View>
+      )}
+      
+      {/* Profile Tab - Different for fans and athletes */}
+      <Tabs.Screen
+        name={isFan ? 'fan-profile' : 'profile'}
+        options={{
+          title: isFan ? 'Fan Hub' : 'Profile',
+          tabBarIcon: ({ color }) => <Ionicons name={isFan ? "people" : "person"} size={24} color={color} />
+        }}
+      />
+      
+      {/* Chat Tab - Visible to all users */}
+      <Tabs.Screen
+        name="chat"
+        options={{
+          title: 'Chat',
+          tabBarIcon: ({ color }) => <Ionicons name="chatbubble" size={24} color={color} />
+        }}
+      />
+
+      {/* 
+        Hidden screens - These are accessible via direct navigation
+        but not shown in the tab bar
+      */}
+      <Tabs.Screen name="discover" options={{ tabBarButton: () => null }} />
+      <Tabs.Screen name="shared-tracks" options={{ tabBarButton: () => null }} />
+      <Tabs.Screen name="batch" options={{ tabBarButton: () => null }} />
+      <Tabs.Screen name="vocal-isolation" options={{ tabBarButton: () => null }} />
+      <Tabs.Screen name="dolby" options={{ tabBarButton: () => null }} />
+      <Tabs.Screen name="athletes-example" options={{ tabBarButton: () => null }} />
+      <Tabs.Screen name="verification-test" options={{ tabBarButton: () => null }} />
+      <Tabs.Screen name="testing" options={{ tabBarButton: () => null }} />
+      <Tabs.Screen name="recordings" options={{ tabBarButton: () => null }} />
+      <Tabs.Screen name="songs" options={{ tabBarButton: () => null }} />
+      <Tabs.Screen name="podcasts" options={{ tabBarButton: () => null }} />
+      <Tabs.Screen name="athletes" options={{ tabBarButton: () => null }} />
+      <Tabs.Screen name="community" options={{ tabBarButton: () => null }} />
+      <Tabs.Screen name="fan-hub" options={{ tabBarButton: () => null }} />
+      <Tabs.Screen name="admin-verification" options={{ tabBarButton: () => null }} />
+      <Tabs.Screen name="athlete-profile" options={{ tabBarButton: () => null }} />
+    </Tabs>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  }
+});

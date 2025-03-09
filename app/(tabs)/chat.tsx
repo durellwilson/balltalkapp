@@ -10,7 +10,7 @@ import {
   SafeAreaView,
   Image
 } from 'react-native';
-import { router } from 'expo-router';
+import { router, Redirect } from 'expo-router';
 import { useAuth } from '../../contexts/auth';
 import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
 import { MOCK_ATHLETES } from '../../models/Athlete';
@@ -74,152 +74,8 @@ const UPCOMING_EVENTS = [
   }
 ];
 
-export default function ChatAndFanHubScreen() {
-  const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState('messages'); // 'messages' or 'fanHub'
-  const [searchQuery, setSearchQuery] = useState('');
-
-  const renderChatItem = ({ item }: { item: typeof MOCK_CHATS[number] }) => (
-    <TouchableOpacity 
-      style={styles.chatItem}
-      onPress={() => router.push(`/chat/${item.id}`)}
-    >
-      <View style={styles.avatar}>
-        <Ionicons 
-          name={item.isGroup ? "people" : "person"} 
-          size={24} 
-          color="#007AFF" 
-        />
-      </View>
-      <View style={styles.chatInfo}>
-        <Text style={styles.chatName}>{item.name}</Text>
-        <Text style={styles.lastMessage}>{item.lastMessage}</Text>
-      </View>
-      <Text style={styles.timestamp}>{item.timestamp}</Text>
-    </TouchableOpacity>
-  );
-
-  const renderEventItem = ({ item }: { item: typeof UPCOMING_EVENTS[number] }) => (
-    <TouchableOpacity 
-      style={styles.eventCard}
-      onPress={() => console.log('Navigate to event', item.id)}
-    >
-      <View style={styles.eventImageContainer}>
-        <View style={styles.eventImagePlaceholder}>
-          <Ionicons name="calendar" size={24} color="#007AFF" />
-        </View>
-      </View>
-      <View style={styles.eventInfo}>
-        <Text style={styles.eventTitle}>{item.title}</Text>
-        <Text style={styles.eventDate}>{item.date} • {item.time}</Text>
-      </View>
-    </TouchableOpacity>
-  );
-
-  const filteredChats = searchQuery
-    ? MOCK_CHATS.filter(chat => 
-        chat.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        chat.lastMessage.toLowerCase().includes(searchQuery.toLowerCase())
-      )
-    : MOCK_CHATS;
-
-  return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>
-          {activeTab === 'messages' ? 'Messages' : 'Fan Hub'}
-        </Text>
-        <TouchableOpacity 
-          style={styles.homeButton}
-          onPress={() => router.push('/')}
-        >
-          <Ionicons name="home" size={24} color="#007AFF" />
-        </TouchableOpacity>
-      </View>
-      
-      {/* Tab selector */}
-      <View style={styles.tabContainer}>
-        <TouchableOpacity 
-          style={[
-            styles.tabButton, 
-            activeTab === 'messages' ? styles.activeTabButton : null
-          ]}
-          onPress={() => setActiveTab('messages')}
-        >
-          <Ionicons 
-            name="chatbubbles" 
-            size={16} 
-            color={activeTab === 'messages' ? '#007AFF' : '#666'} 
-            style={styles.tabIcon}
-          />
-          <Text style={[
-            styles.tabButtonText,
-            activeTab === 'messages' ? styles.activeTabText : null
-          ]}>
-            Messages
-          </Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={[
-            styles.tabButton, 
-            activeTab === 'fanHub' ? styles.activeTabButton : null
-          ]}
-          onPress={() => setActiveTab('fanHub')}
-        >
-          <Ionicons 
-            name="star" 
-            size={16} 
-            color={activeTab === 'fanHub' ? '#007AFF' : '#666'} 
-            style={styles.tabIcon}
-          />
-          <Text style={[
-            styles.tabButtonText,
-            activeTab === 'fanHub' ? styles.activeTabText : null
-          ]}>
-            Fan Hub
-          </Text>
-        </TouchableOpacity>
-      </View>
-      
-      {activeTab === 'messages' && (
-        <>
-          <View style={styles.searchContainer}>
-            <Ionicons name="search" size={20} color="#999" style={styles.searchIcon} />
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Search messages..."
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-            />
-          </View>
-          
-          <FlatList
-            data={filteredChats}
-            renderItem={renderChatItem}
-            keyExtractor={item => item.id}
-            contentContainerStyle={styles.listContent}
-          />
-        </>
-      )}
-      
-      {activeTab === 'fanHub' && (
-        <ScrollView>
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Upcoming Events</Text>
-            <FlatList
-              data={UPCOMING_EVENTS}
-              renderItem={renderEventItem}
-              keyExtractor={item => item.id}
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.eventsListContent}
-            />
-          </View>
-        </ScrollView>
-      )}
-    </SafeAreaView>
-  );
+export default function ChatTab() {
+  return <Redirect href="/chat" />;
 }
 
 const styles = StyleSheet.create({

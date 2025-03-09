@@ -1,139 +1,152 @@
 import React from 'react';
-import { View, Text, StyleSheet, Switch } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
 import Slider from '@react-native-community/slider';
-import { useAudioProcessing, AudioProcessingSettings } from '../../../contexts/AudioProcessingContext';
+import { EqualizerSettings } from './AudioEffectsPanel';
 
-export default function EqualizerControl() {
-  const { state, updateSettings } = useAudioProcessing();
-  const { eqBands } = state.currentSettings;
-  
-  const updateBand = (index: number, property: keyof typeof eqBands[0], value: number | boolean) => {
-    const newBands = [...eqBands];
-    newBands[index] = {
-      ...newBands[index],
-      [property]: value
-    };
-    
-    updateSettings({ eqBands: newBands });
+interface EqualizerControlProps {
+  settings: EqualizerSettings;
+  onChange: (settings: EqualizerSettings) => void;
+  isActive: boolean;
+}
+
+/**
+ * Component for controlling equalizer settings
+ */
+const EqualizerControl: React.FC<EqualizerControlProps> = ({
+  settings,
+  onChange,
+  isActive
+}) => {
+  const handleLowGainChange = (value: number) => {
+    onChange({ ...settings, lowGain: value });
   };
   
-  // Format frequency display
-  const formatFrequency = (freq: number) => {
-    return freq >= 1000 ? `${freq / 1000}kHz` : `${freq}Hz`;
+  const handleMidGainChange = (value: number) => {
+    onChange({ ...settings, midGain: value });
+  };
+  
+  const handleHighGainChange = (value: number) => {
+    onChange({ ...settings, highGain: value });
   };
   
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Equalizer</Text>
+      <View style={styles.sliderContainer}>
+        <Text style={styles.sliderLabel}>Low</Text>
+        <Slider
+          style={styles.slider}
+          minimumValue={-12}
+          maximumValue={12}
+          step={0.5}
+          value={settings.lowGain}
+          onValueChange={handleLowGainChange}
+          minimumTrackTintColor={isActive ? '#007AFF' : '#CCCCCC'}
+          maximumTrackTintColor="#EEEEEE"
+          thumbTintColor={isActive ? '#007AFF' : '#AAAAAA'}
+          disabled={!isActive}
+        />
+        <Text style={styles.valueText}>{settings.lowGain.toFixed(1)} dB</Text>
+      </View>
       
-      <View style={styles.bandsContainer}>
-        {eqBands.map((band, index) => (
-          <View key={index} style={styles.bandControl}>
-            <View style={styles.bandHeader}>
-              <Text style={styles.frequencyText}>{formatFrequency(band.frequency)}</Text>
-              <Switch
-                value={band.enabled}
-                onValueChange={(value) => updateBand(index, 'enabled', value)}
-                trackColor={{ false: '#767577', true: '#4caf50' }}
-                thumbColor={band.enabled ? '#ffffff' : '#f4f3f4'}
-              />
-            </View>
-            
-            <Slider
-              style={styles.slider}
-              minimumValue={-12}
-              maximumValue={12}
-              step={0.5}
-              value={band.gain}
-              onValueChange={(value) => updateBand(index, 'gain', value)}
-              minimumTrackTintColor="#2196F3"
-              maximumTrackTintColor="#000000"
-              disabled={!band.enabled}
-              thumbTintColor={band.enabled ? '#2196F3' : '#cccccc'}
-            />
-            
-            <Text style={[styles.gainText, !band.enabled && styles.disabledText]}>
-              {band.gain > 0 ? '+' : ''}{band.gain.toFixed(1)} dB
-            </Text>
-            
-            <Text style={styles.qLabel}>Q</Text>
-            <Slider
-              style={styles.qSlider}
-              minimumValue={0.1}
-              maximumValue={10}
-              step={0.1}
-              value={band.q}
-              onValueChange={(value) => updateBand(index, 'q', value)}
-              minimumTrackTintColor="#2196F3"
-              maximumTrackTintColor="#000000"
-              disabled={!band.enabled}
-              thumbTintColor={band.enabled ? '#2196F3' : '#cccccc'}
-            />
-            
-            <Text style={[styles.qText, !band.enabled && styles.disabledText]}>
-              {band.q.toFixed(1)}
-            </Text>
-          </View>
-        ))}
+      <View style={styles.sliderContainer}>
+        <Text style={styles.sliderLabel}>Mid</Text>
+        <Slider
+          style={styles.slider}
+          minimumValue={-12}
+          maximumValue={12}
+          step={0.5}
+          value={settings.midGain}
+          onValueChange={handleMidGainChange}
+          minimumTrackTintColor={isActive ? '#007AFF' : '#CCCCCC'}
+          maximumTrackTintColor="#EEEEEE"
+          thumbTintColor={isActive ? '#007AFF' : '#AAAAAA'}
+          disabled={!isActive}
+        />
+        <Text style={styles.valueText}>{settings.midGain.toFixed(1)} dB</Text>
+      </View>
+      
+      <View style={styles.sliderContainer}>
+        <Text style={styles.sliderLabel}>High</Text>
+        <Slider
+          style={styles.slider}
+          minimumValue={-12}
+          maximumValue={12}
+          step={0.5}
+          value={settings.highGain}
+          onValueChange={handleHighGainChange}
+          minimumTrackTintColor={isActive ? '#007AFF' : '#CCCCCC'}
+          maximumTrackTintColor="#EEEEEE"
+          thumbTintColor={isActive ? '#007AFF' : '#AAAAAA'}
+          disabled={!isActive}
+        />
+        <Text style={styles.valueText}>{settings.highGain.toFixed(1)} dB</Text>
+      </View>
+      
+      <View style={styles.visualizer}>
+        <View style={[
+          styles.band, 
+          { height: `${Math.min(100, 50 + settings.lowGain * 4)}%` },
+          isActive ? styles.activeBand : styles.inactiveBand
+        ]} />
+        <View style={[
+          styles.band, 
+          { height: `${Math.min(100, 50 + settings.midGain * 4)}%` },
+          isActive ? styles.activeBand : styles.inactiveBand
+        ]} />
+        <View style={[
+          styles.band, 
+          { height: `${Math.min(100, 50 + settings.highGain * 4)}%` },
+          isActive ? styles.activeBand : styles.inactiveBand
+        ]} />
       </View>
     </View>
   );
-}
+};
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: '#f5f5f5',
-    borderRadius: 10,
+    flex: 1,
     padding: 16,
-    marginBottom: 16,
   },
-  title: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 16,
-  },
-  bandsContainer: {
+  sliderContainer: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-  },
-  bandControl: {
-    width: '48%',
-    backgroundColor: '#ffffff',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 16,
-  },
-  bandHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 16,
   },
-  frequencyText: {
-    fontSize: 16,
-    fontWeight: 'bold',
+  sliderLabel: {
+    width: 40,
+    fontSize: 14,
+    fontWeight: '500',
   },
   slider: {
-    width: '100%',
+    flex: 1,
     height: 40,
   },
-  gainText: {
-    textAlign: 'center',
-    marginBottom: 8,
+  valueText: {
+    width: 60,
+    textAlign: 'right',
+    fontSize: 14,
+    fontFamily: 'monospace',
   },
-  qLabel: {
-    fontSize: 12,
-    marginTop: 8,
+  visualizer: {
+    height: 100,
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'flex-end',
+    marginTop: 20,
+    paddingHorizontal: 20,
   },
-  qSlider: {
-    width: '100%',
-    height: 40,
+  band: {
+    width: 30,
+    borderTopLeftRadius: 4,
+    borderTopRightRadius: 4,
   },
-  qText: {
-    textAlign: 'center',
+  activeBand: {
+    backgroundColor: '#007AFF',
   },
-  disabledText: {
-    color: '#999999',
-  }
-}); 
+  inactiveBand: {
+    backgroundColor: '#CCCCCC',
+  },
+});
+
+export default EqualizerControl; 

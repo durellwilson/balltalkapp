@@ -1,0 +1,140 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function isAthlete() {
+      return isSignedIn() && 
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'athlete';
+    }
+    
+    // Users collection
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && request.auth.uid == userId;
+    }
+    
+    // Chat messages collection
+    match /messages/{messageId} {
+      allow read: if isSignedIn() && 
+                   exists(/databases/$(database)/documents/conversations/$(resource.data.conversationId)) &&
+                   get(/databases/$(database)/documents/conversations/$(resource.data.conversationId)).data.participants.hasAny([request.auth.uid]);
+      
+      allow create: if isSignedIn() && 
+                     exists(/databases/$(database)/documents/conversations/$(request.resource.data.conversationId)) &&
+                     get(/databases/$(database)/documents/conversations/$(request.resource.data.conversationId)).data.participants.hasAny([request.auth.uid]) &&
+                     request.resource.data.senderId == request.auth.uid;
+      
+      allow update: if isSignedIn() && 
+                     exists(/databases/$(database)/documents/conversations/$(resource.data.conversationId)) &&
+                     get(/databases/$(database)/documents/conversations/$(resource.data.conversationId)).data.participants.hasAny([request.auth.uid]);
+      
+      allow delete: if isSignedIn() && resource.data.senderId == request.auth.uid;
+    }
+    
+    // Conversations collection
+    match /conversations/{conversationId} {
+      allow read: if isSignedIn() && (
+                    // Regular conversation
+                    resource.data.participants.hasAny([request.auth.uid]) ||
+                    // Public fan groups for browsing
+                    (resource.data.isFanGroup == true && resource.data.isMonetized == true)
+                  );
+      
+      allow create: if isSignedIn() && (
+                      // Regular conversation
+                      request.resource.data.participants.hasAny([request.auth.uid]) ||
+                      // Athlete-only groups can only be created by athletes
+                      (request.resource.data.isAthleteOnly == true && isAthlete()) ||
+                      // Fan groups can only be created by athletes
+                      (request.resource.data.isFanGroup == true && isAthlete())
+                    );
+      
+      allow update: if isSignedIn() && (
+                      // Regular participants can update
+                      resource.data.participants.hasAny([request.auth.uid]) ||
+                      // Admin can always update
+                      resource.data.groupAdminId == request.auth.uid
+                    );
+      
+      allow delete: if isSignedIn() && 
+                     (resource.data.isGroupChat == false && resource.data.participants.hasAny([request.auth.uid])) ||
+                     (resource.data.isGroupChat == true && resource.data.groupAdminId == request.auth.uid);
+    }
+    
+    // Message requests collection
+    match /messageRequests/{requestId} {
+      allow read: if isSignedIn() && 
+                   (resource.data.fromUserId == request.auth.uid || 
+                    resource.data.toUserId == request.auth.uid);
+      
+      allow create: if isSignedIn() && request.resource.data.fromUserId == request.auth.uid;
+      
+      allow update: if isSignedIn() && resource.data.toUserId == request.auth.uid;
+      
+      allow delete: if isSignedIn() && 
+                     (resource.data.fromUserId == request.auth.uid || 
+                      resource.data.toUserId == request.auth.uid);
+    }
+    
+    // Fan Group Payments
+    match /fanGroupPayments/{groupId} {
+      allow read: if isSignedIn() && (
+                    // Group admin (athlete)
+                    resource.data.athleteId == request.auth.uid ||
+                    // Members don't need payment info
+                    exists(/databases/$(database)/documents/conversations/$(groupId)) &&
+                    get(/databases/$(database)/documents/conversations/$(groupId)).data.participants.hasAny([request.auth.uid])
+                  );
+      
+      allow create: if isSignedIn() && isAthlete() && request.resource.data.athleteId == request.auth.uid;
+      
+      allow update: if isSignedIn() && resource.data.athleteId == request.auth.uid;
+      
+      allow delete: if false; // Payments should never be deleted
+    }
+    
+    // Fan Group Subscriptions
+    match /fanGroupSubscriptions/{subscriptionId} {
+      allow read: if isSignedIn() && (
+                    // User's own subscription
+                    resource.data.userId == request.auth.uid ||
+                    // Group owner (athlete)
+                    resource.data.athleteId == request.auth.uid
+                  );
+      
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      
+      allow update: if isSignedIn() && (
+                      // User can update own subscription (e.g., cancel)
+                      resource.data.userId == request.auth.uid ||
+                      // Group owner can update subscriptions (e.g., approve/reject)
+                      resource.data.athleteId == request.auth.uid
+                    );
+      
+      allow delete: if false; // Subscriptions should be marked as inactive instead of deleted
+    }
+    
+    // Typing indicators collection
+    match /typing/{typingId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+    }
+    
+    // Test collections can be read and written by anyone during testing
+    match /test/{document=**} {
+      allow read, write: if true;
+    }
+    
+    // Allow all other operations for authenticated users (for backward compatibility)
+    match /{document=**} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
+    }
+  }
+}

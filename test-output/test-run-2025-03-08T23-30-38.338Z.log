@@ -1,0 +1,10 @@
+=== BallTalk Comprehensive Test Runner ===
+Starting tests at: 3/8/2025, 6:30:38 PM
+
+Running unit tests...
+Command: npm run test:unit
+✗ unit tests failed in 2.49s
+Error: Command failed: npm run test:unit
+
+Running firebase tests...
+Command: npm run test:firebase

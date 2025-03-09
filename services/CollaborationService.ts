@@ -610,47 +610,73 @@ class CollaborationService {
   }
   
   /**
-   * Create a new collaboration session for a project
+   * Create a new collaboration session
    */
-  async createSession(projectId: string, hostId: string, hostDisplayName: string): Promise<CollaborationSession> {
+  async createSession(
+    projectId: string, 
+    hostId: string, 
+    hostDisplayName: string
+  ): Promise<CollaborationSession> {
     try {
+      console.log(`[CollaborationService] Creating session for project ${projectId} with host ${hostId}`);
+      
       // Generate a unique session ID
       const sessionId = uuidv4();
       
-      // Generate a 6-character invite code
+      // Generate a unique invite code (6 characters)
       const inviteCode = Math.random().toString(36).substring(2, 8).toUpperCase();
       
-      // Create the host user object
-      const hostUser: CollaborationUser = {
-        userId: hostId,
-        displayName: hostDisplayName,
-        role: 'host',
-        joinedAt: new Date().toISOString(),
-        isActive: true,
-        lastActivity: new Date().toISOString()
-      };
+      // Get current timestamp
+      const now = new Date().toISOString();
       
-      // Create the session object
+      // Create session object
       const session: CollaborationSession = {
         id: sessionId,
         projectId,
         hostId,
-        activeUsers: [hostUser],
-        startedAt: new Date().toISOString(),
+        activeUsers: [
+          {
+            userId: hostId,
+            displayName: hostDisplayName,
+            role: 'host',
+            joinedAt: now,
+            isActive: true,
+            lastActivity: now
+          }
+        ],
+        startedAt: now,
         status: 'active',
         inviteCode
       };
       
-      // Save to Firestore
+      // Add session to Firestore
       const sessionRef = doc(firebaseDb, 'collaborationSessions', sessionId);
-      await setDoc(sessionRef, session);
+      await setDoc(sessionRef, {
+        projectId,
+        hostId,
+        activeUsers: [
+          {
+            userId: hostId,
+            displayName: hostDisplayName,
+            role: 'host',
+            joinedAt: serverTimestamp(),
+            isActive: true,
+            lastActivity: serverTimestamp()
+          }
+        ],
+        startedAt: serverTimestamp(),
+        status: 'active',
+        inviteCode
+      });
       
-      // Log the session creation event
+      console.log(`[CollaborationService] Session created: ${sessionId} with invite code ${inviteCode}`);
+      
+      // Log the event
       await this.logEvent(sessionId, hostId, 'join', { role: 'host' });
       
       return session;
     } catch (error) {
-      console.error('Error creating collaboration session:', error);
+      console.error(`[CollaborationService] Error creating session:`, error);
       throw error;
     }
   }
@@ -658,62 +684,108 @@ class CollaborationService {
   /**
    * Join an existing collaboration session
    */
-  async joinSession(inviteCode: string, userId: string, displayName: string): Promise<CollaborationSession | null> {
+  async joinSession(
+    inviteCode: string, 
+    userId: string, 
+    displayName: string
+  ): Promise<CollaborationSession | null> {
     try {
+      console.log(`[CollaborationService] User ${userId} joining session with invite code ${inviteCode}`);
+      
       // Find the session with this invite code
       const sessionsRef = collection(firebaseDb, 'collaborationSessions');
-      const q = query(sessionsRef, where('inviteCode', '==', inviteCode), where('status', '==', 'active'));
-      const querySnapshot = await getDocs(q);
+      const q = query(
+        sessionsRef,
+        where('inviteCode', '==', inviteCode),
+        where('status', '==', 'active')
+      );
       
-      if (querySnapshot.empty) {
-        console.error('No active session found with this invite code');
+      const snapshot = await getDocs(q);
+      
+      if (snapshot.empty) {
+        console.log(`[CollaborationService] No active session found with invite code ${inviteCode}`);
         return null;
       }
       
       // Get the session document
-      const sessionDoc = querySnapshot.docs[0];
-      const session = sessionDoc.data() as CollaborationSession;
+      const sessionDoc = snapshot.docs[0];
+      const sessionData = sessionDoc.data();
+      const sessionId = sessionDoc.id;
+      
+      console.log(`[CollaborationService] Found session ${sessionId}`);
       
       // Check if user is already in the session
-      const existingUserIndex = session.activeUsers.findIndex(user => user.userId === userId);
+      const activeUsers = sessionData.activeUsers || [];
+      const existingUserIndex = activeUsers.findIndex((user: any) => user.userId === userId);
+      
+      const now = new Date().toISOString();
       
       if (existingUserIndex >= 0) {
         // User is already in the session, update their status
-        const updatedUsers = [...session.activeUsers];
-        updatedUsers[existingUserIndex] = {
-          ...updatedUsers[existingUserIndex],
-          isActive: true,
-          lastActivity: new Date().toISOString()
-        };
+        console.log(`[CollaborationService] User ${userId} is already in session, updating status`);
         
-        await updateDoc(sessionDoc.ref, {
-          activeUsers: updatedUsers
-        });
+        activeUsers[existingUserIndex] = {
+          ...activeUsers[existingUserIndex],
+          isActive: true,
+          lastActivity: serverTimestamp()
+        };
       } else {
-        // Add the new user to the session
-        const newUser: CollaborationUser = {
+        // Add user to the session
+        console.log(`[CollaborationService] Adding user ${userId} to session`);
+        
+        activeUsers.push({
           userId,
           displayName,
-          role: 'collaborator',
-          joinedAt: new Date().toISOString(),
+          role: 'guest',
+          joinedAt: serverTimestamp(),
           isActive: true,
-          lastActivity: new Date().toISOString()
-        };
-        
-        await updateDoc(sessionDoc.ref, {
-          activeUsers: arrayUnion(newUser)
+          lastActivity: serverTimestamp()
         });
       }
       
-      // Log the join event
-      await this.logEvent(session.id, userId, 'join', { role: 'collaborator' });
+      // Update the session
+      const sessionRef = doc(firebaseDb, 'collaborationSessions', sessionId);
+      await updateDoc(sessionRef, {
+        activeUsers,
+      });
       
-      // Get the updated session
-      const updatedSessionDoc = await getDoc(sessionDoc.ref);
-      return updatedSessionDoc.data() as CollaborationSession;
+      console.log(`[CollaborationService] User ${userId} joined session ${sessionId}`);
+      
+      // Log the event
+      await this.logEvent(sessionId, userId, 'join', { role: 'guest' });
+      
+      // Convert Firestore timestamp to string
+      const startedAt = sessionData.startedAt instanceof Timestamp 
+        ? sessionData.startedAt.toDate().toISOString() 
+        : sessionData.startedAt;
+      
+      // Convert activeUsers array
+      const formattedActiveUsers = activeUsers.map((user: any) => ({
+        userId: user.userId,
+        displayName: user.displayName,
+        role: user.role,
+        joinedAt: user.joinedAt instanceof Timestamp 
+          ? user.joinedAt.toDate().toISOString() 
+          : user.joinedAt || now,
+        isActive: user.isActive,
+        lastActivity: user.lastActivity instanceof Timestamp 
+          ? user.lastActivity.toDate().toISOString() 
+          : user.lastActivity || now
+      }));
+      
+      // Return the session
+      return {
+        id: sessionId,
+        projectId: sessionData.projectId,
+        hostId: sessionData.hostId,
+        activeUsers: formattedActiveUsers,
+        startedAt,
+        status: sessionData.status,
+        inviteCode: sessionData.inviteCode
+      };
     } catch (error) {
-      console.error('Error joining collaboration session:', error);
-      throw error;
+      console.error(`[CollaborationService] Error joining session:`, error);
+      return null;
     }
   }
   
@@ -806,6 +878,8 @@ class CollaborationService {
    */
   async sendMessage(sessionId: string, userId: string, displayName: string, message: string): Promise<CollaborationMessage> {
     try {
+      console.log(`Sending message in session ${sessionId} from user ${userId}: ${message.substring(0, 20)}...`);
+      
       const messageId = uuidv4();
       
       const chatMessage: CollaborationMessage = {
@@ -821,6 +895,10 @@ class CollaborationService {
       const messageRef = doc(firebaseDb, 'collaborationMessages', messageId);
       await setDoc(messageRef, chatMessage);
       
+      // Update user activity
+      await this.updateUserActivity(sessionId, userId);
+      
+      console.log('Message sent successfully:', messageId);
       return chatMessage;
     } catch (error) {
       console.error('Error sending collaboration message:', error);
@@ -831,10 +909,19 @@ class CollaborationService {
   /**
    * Log a collaboration event
    */
-  async logEvent(sessionId: string, userId: string, type: CollaborationEvent['type'], metadata?: any): Promise<void> {
+  async logEvent(
+    sessionId: string, 
+    userId: string, 
+    type: CollaborationEvent['type'], 
+    metadata?: any
+  ): Promise<void> {
     try {
+      console.log(`[CollaborationService] Logging event ${type} for user ${userId} in session ${sessionId}`);
+      
+      // Create event ID
       const eventId = uuidv4();
       
+      // Create event object
       const event: CollaborationEvent = {
         id: eventId,
         sessionId,
@@ -844,12 +931,22 @@ class CollaborationService {
         metadata
       };
       
-      // Save to Firestore
-      const eventRef = doc(firebaseDb, 'collaborationEvents', eventId);
-      await setDoc(eventRef, event);
+      // Add event to Firestore
+      const eventsCollection = collection(firebaseDb, 'collaborationEvents');
+      await addDoc(eventsCollection, {
+        sessionId,
+        userId,
+        type,
+        timestamp: serverTimestamp(),
+        metadata
+      });
+      
+      console.log(`[CollaborationService] Event logged successfully: ${eventId}`);
+      
+      // Update user activity timestamp
+      await this.updateUserActivity(sessionId, userId);
     } catch (error) {
-      console.error('Error logging collaboration event:', error);
-      // Don't throw here to prevent disrupting the main flow
+      console.error(`[CollaborationService] Error logging event:`, error);
     }
   }
   
@@ -857,23 +954,65 @@ class CollaborationService {
    * Listen for changes to a collaboration session
    */
   subscribeToSession(sessionId: string, callback: (session: CollaborationSession) => void): () => void {
-    // Unsubscribe from any existing listener for this session
-    this.unsubscribeFromSession(sessionId);
+    console.log(`[CollaborationService] Subscribing to session ${sessionId}`);
     
-    // Create a new listener
-    const sessionRef = doc(firebaseDb, 'collaborationSessions', sessionId);
-    const unsubscribe = onSnapshot(sessionRef, (doc) => {
-      if (doc.exists()) {
-        callback(doc.data() as CollaborationSession);
-      }
-    }, (error) => {
-      console.error('Error listening to session changes:', error);
-    });
-    
-    // Store the unsubscribe function
-    this.sessionListeners.set(sessionId, unsubscribe);
-    
-    return unsubscribe;
+    try {
+      // Unsubscribe from any existing listener for this session
+      this.unsubscribeFromSession(sessionId);
+      
+      // Set up listener
+      const sessionRef = doc(firebaseDb, 'collaborationSessions', sessionId);
+      const unsubscribe = onSnapshot(sessionRef, (snapshot) => {
+        if (!snapshot.exists()) {
+          console.log(`[CollaborationService] Session ${sessionId} no longer exists`);
+          return;
+        }
+        
+        const sessionData = snapshot.data();
+        
+        // Convert Firestore timestamp to string
+        const startedAt = sessionData.startedAt instanceof Timestamp 
+          ? sessionData.startedAt.toDate().toISOString() 
+          : sessionData.startedAt;
+        
+        // Convert activeUsers array
+        const activeUsers = sessionData.activeUsers || [];
+        const formattedActiveUsers = activeUsers.map((user: any) => ({
+          userId: user.userId,
+          displayName: user.displayName,
+          role: user.role,
+          joinedAt: user.joinedAt instanceof Timestamp 
+            ? user.joinedAt.toDate().toISOString() 
+            : user.joinedAt,
+          isActive: user.isActive,
+          lastActivity: user.lastActivity instanceof Timestamp 
+            ? user.lastActivity.toDate().toISOString() 
+            : user.lastActivity
+        }));
+        
+        const session: CollaborationSession = {
+          id: snapshot.id,
+          projectId: sessionData.projectId,
+          hostId: sessionData.hostId,
+          activeUsers: formattedActiveUsers,
+          startedAt,
+          status: sessionData.status,
+          inviteCode: sessionData.inviteCode
+        };
+        
+        callback(session);
+      }, (error) => {
+        console.error(`[CollaborationService] Error in session subscription:`, error);
+      });
+      
+      // Store the unsubscribe function
+      this.sessionListeners.set(sessionId, unsubscribe);
+      
+      return unsubscribe;
+    } catch (error) {
+      console.error(`[CollaborationService] Error setting up session subscription:`, error);
+      return () => {};
+    }
   }
   
   /**
@@ -891,31 +1030,43 @@ class CollaborationService {
    * Listen for new messages in a collaboration session
    */
   subscribeToMessages(sessionId: string, callback: (messages: CollaborationMessage[]) => void): () => void {
-    // Unsubscribe from any existing listener for this session's messages
+    console.log('Subscribing to messages for session:', sessionId);
+    
+    // Unsubscribe from any existing listener for this session
     this.unsubscribeFromMessages(sessionId);
     
-    // Create a new listener
-    const messagesRef = collection(firebaseDb, 'collaborationMessages');
-    const q = query(messagesRef, where('sessionId', '==', sessionId));
-    
-    const unsubscribe = onSnapshot(q, (querySnapshot) => {
-      const messages: CollaborationMessage[] = [];
-      querySnapshot.forEach((doc) => {
-        messages.push(doc.data() as CollaborationMessage);
+    try {
+      // Create a query for messages in this session, ordered by timestamp
+      const messagesRef = collection(firebaseDb, 'collaborationMessages');
+      const q = query(
+        messagesRef,
+        where('sessionId', '==', sessionId),
+        orderBy('timestamp', 'asc')
+      );
+      
+      // Set up the listener
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        const messages: CollaborationMessage[] = [];
+        
+        snapshot.forEach((doc) => {
+          const message = doc.data() as CollaborationMessage;
+          messages.push(message);
+        });
+        
+        console.log(`Received ${messages.length} messages for session ${sessionId}`);
+        callback(messages);
+      }, (error) => {
+        console.error('Error in messages subscription:', error);
       });
       
-      // Sort messages by timestamp
-      messages.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+      // Store the unsubscribe function
+      this.messageListeners.set(sessionId, unsubscribe);
       
-      callback(messages);
-    }, (error) => {
-      console.error('Error listening to message changes:', error);
-    });
-    
-    // Store the unsubscribe function
-    this.messageListeners.set(sessionId, unsubscribe);
-    
-    return unsubscribe;
+      return () => this.unsubscribeFromMessages(sessionId);
+    } catch (error) {
+      console.error('Error setting up messages subscription:', error);
+      return () => {};
+    }
   }
   
   /**
@@ -930,34 +1081,77 @@ class CollaborationService {
   }
   
   /**
-   * Listen for events in a collaboration session
+   * Subscribe to events in a collaboration session with real-time updates
    */
-  subscribeToEvents(sessionId: string, callback: (events: CollaborationEvent[]) => void): () => void {
-    // Unsubscribe from any existing listener for this session's events
-    this.unsubscribeFromEvents(sessionId);
+  subscribeToEvents(
+    sessionId: string, 
+    callback: (events: CollaborationEvent[]) => void
+  ): () => void {
+    console.log(`[CollaborationService] Subscribing to events for session ${sessionId}`);
     
-    // Create a new listener
-    const eventsRef = collection(firebaseDb, 'collaborationEvents');
-    const q = query(eventsRef, where('sessionId', '==', sessionId));
-    
-    const unsubscribe = onSnapshot(q, (querySnapshot) => {
-      const events: CollaborationEvent[] = [];
-      querySnapshot.forEach((doc) => {
-        events.push(doc.data() as CollaborationEvent);
+    try {
+      // Unsubscribe from any existing listener for this session
+      this.unsubscribeFromEvents(sessionId);
+      
+      // Create query for events in this session, ordered by timestamp
+      const eventsQuery = query(
+        collection(firebaseDb, 'collaborationEvents'),
+        where('sessionId', '==', sessionId),
+        orderBy('timestamp', 'desc'),
+        limit(50)
+      );
+      
+      // Set up real-time listener
+      const unsubscribe = onSnapshot(eventsQuery, (snapshot) => {
+        try {
+          const events: CollaborationEvent[] = [];
+          
+          snapshot.forEach((doc) => {
+            const eventData = doc.data();
+            
+            // Convert timestamp to ISO string if it's a Firestore Timestamp
+            let timestamp = eventData.timestamp;
+            if (timestamp instanceof Timestamp) {
+              timestamp = timestamp.toDate().toISOString();
+            } else if (typeof timestamp === 'object' && timestamp !== null && 'toDate' in timestamp) {
+              // Handle cases where Timestamp might not be properly typed
+              timestamp = (timestamp as unknown as Timestamp).toDate().toISOString();
+            }
+            
+            events.push({
+              id: doc.id,
+              sessionId: eventData.sessionId,
+              userId: eventData.userId,
+              type: eventData.type,
+              timestamp: timestamp,
+              metadata: eventData.metadata
+            });
+          });
+          
+          // Sort events by timestamp (newest first)
+          events.sort((a, b) => {
+            const dateA = new Date(a.timestamp).getTime();
+            const dateB = new Date(b.timestamp).getTime();
+            return dateB - dateA;
+          });
+          
+          // Call the callback with the events
+          callback(events);
+        } catch (error) {
+          console.error('[CollaborationService] Error processing events snapshot:', error);
+        }
+      }, (error) => {
+        console.error('[CollaborationService] Error in events subscription:', error);
       });
       
-      // Sort events by timestamp
-      events.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+      // Store the unsubscribe function
+      this.eventListeners.set(sessionId, unsubscribe);
       
-      callback(events);
-    }, (error) => {
-      console.error('Error listening to event changes:', error);
-    });
-    
-    // Store the unsubscribe function
-    this.eventListeners.set(sessionId, unsubscribe);
-    
-    return unsubscribe;
+      return unsubscribe;
+    } catch (error) {
+      console.error('[CollaborationService] Error setting up events subscription:', error);
+      return () => {};
+    }
   }
   
   /**
@@ -976,64 +1170,108 @@ class CollaborationService {
    */
   async updateUserActivity(sessionId: string, userId: string): Promise<void> {
     try {
-      const sessionRef = doc(firebaseDb, 'collaborationSessions', sessionId);
-      const sessionDoc = await getDoc(sessionRef);
+      console.log(`[CollaborationService] Updating activity for user ${userId} in session ${sessionId}`);
       
-      if (!sessionDoc.exists()) {
-        console.error('Session not found');
+      // Get the session
+      const sessionRef = doc(firebaseDb, 'collaborationSessions', sessionId);
+      const sessionSnap = await getDoc(sessionRef);
+      
+      if (!sessionSnap.exists()) {
+        console.error(`[CollaborationService] Session ${sessionId} not found`);
         return;
       }
       
-      const session = sessionDoc.data() as CollaborationSession;
+      const sessionData = sessionSnap.data();
+      const activeUsers = sessionData.activeUsers || [];
       
-      // Find the user in the session
-      const userIndex = session.activeUsers.findIndex(user => user.userId === userId);
+      // Find the user
+      const userIndex = activeUsers.findIndex((user: any) => user.userId === userId);
       
-      if (userIndex >= 0) {
-        // Update the user's last activity timestamp
-        const updatedUsers = [...session.activeUsers];
-        updatedUsers[userIndex] = {
-          ...updatedUsers[userIndex],
-          lastActivity: new Date().toISOString()
-        };
-        
-        await updateDoc(sessionRef, {
-          activeUsers: updatedUsers
-        });
+      if (userIndex === -1) {
+        console.error(`[CollaborationService] User ${userId} not found in session ${sessionId}`);
+        return;
       }
+      
+      // Update the user's activity timestamp
+      activeUsers[userIndex] = {
+        ...activeUsers[userIndex],
+        isActive: true,
+        lastActivity: serverTimestamp()
+      };
+      
+      // Update the session
+      await updateDoc(sessionRef, {
+        activeUsers
+      });
+      
+      console.log(`[CollaborationService] User activity updated successfully`);
     } catch (error) {
-      console.error('Error updating user activity:', error);
+      console.error(`[CollaborationService] Error updating user activity:`, error);
     }
   }
 
   /**
-   * Find a collaboration session by project ID
-   * @param projectId The project ID to find a session for
-   * @returns The collaboration session if found, null otherwise
+   * Find an active session for a project
    */
   static async findSessionByProject(projectId: string): Promise<CollaborationSession | null> {
     try {
-      const sessionsRef = db.collection('collaborationSessions');
-      const query = await sessionsRef
-        .where('projectId', '==', projectId)
-        .where('status', '==', 'active')
-        .orderBy('startedAt', 'desc')
-        .limit(1)
-        .get();
-
-      if (query.empty) {
+      console.log(`[CollaborationService] Finding session for project ${projectId}`);
+      
+      // Query for active sessions for this project
+      const sessionsRef = collection(firebaseDb, 'collaborationSessions');
+      const q = query(
+        sessionsRef,
+        where('projectId', '==', projectId),
+        where('status', '==', 'active'),
+        orderBy('startedAt', 'desc'),
+        limit(1)
+      );
+      
+      const snapshot = await getDocs(q);
+      
+      if (snapshot.empty) {
+        console.log(`[CollaborationService] No active session found for project ${projectId}`);
         return null;
       }
-
-      const sessionDoc = query.docs[0];
-      const sessionData = sessionDoc.data() as CollaborationSession;
       
-      return {
-        ...sessionData,
-        id: sessionDoc.id
+      // Get the first (most recent) session
+      const sessionDoc = snapshot.docs[0];
+      const sessionData = sessionDoc.data();
+      
+      // Convert Firestore timestamp to string
+      const startedAt = sessionData.startedAt instanceof Timestamp 
+        ? sessionData.startedAt.toDate().toISOString() 
+        : sessionData.startedAt;
+      
+      // Convert activeUsers array
+      const activeUsers = sessionData.activeUsers || [];
+      const formattedActiveUsers = activeUsers.map((user: any) => ({
+        userId: user.userId,
+        displayName: user.displayName,
+        role: user.role,
+        joinedAt: user.joinedAt instanceof Timestamp 
+          ? user.joinedAt.toDate().toISOString() 
+          : user.joinedAt,
+        isActive: user.isActive,
+        lastActivity: user.lastActivity instanceof Timestamp 
+          ? user.lastActivity.toDate().toISOString() 
+          : user.lastActivity
+      }));
+      
+      const session: CollaborationSession = {
+        id: sessionDoc.id,
+        projectId: sessionData.projectId,
+        hostId: sessionData.hostId,
+        activeUsers: formattedActiveUsers,
+        startedAt,
+        status: sessionData.status,
+        inviteCode: sessionData.inviteCode
       };
+      
+      console.log(`[CollaborationService] Found active session ${session.id} for project ${projectId}`);
+      return session;
     } catch (error) {
-      console.error('Error finding session by project:', error);
+      console.error(`[CollaborationService] Error finding session for project ${projectId}:`, error);
       return null;
     }
   }

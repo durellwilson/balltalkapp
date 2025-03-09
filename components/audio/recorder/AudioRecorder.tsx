@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Platform, ActivityIndicator } from 'react-native';
-import { Audio } from 'expo-av';
+import { Audio, InterruptionModeIOS, InterruptionModeAndroid } from 'expo-av';
 import * as FileSystem from 'expo-file-system';
 import { MaterialIcons } from '@expo/vector-icons';
 
@@ -45,11 +45,11 @@ export default function AudioRecorder({
         await Audio.setAudioModeAsync({
           allowsRecordingIOS: true,
           playsInSilentModeIOS: true,
-          staysActiveInBackground: false,
+          staysActiveInBackground: true,
           shouldDuckAndroid: true,
+          interruptionModeIOS: InterruptionModeIOS.DoNotMix,
+          interruptionModeAndroid: InterruptionModeAndroid.DoNotMix,
           playThroughEarpieceAndroid: false,
-          interruptionModeIOS: Audio.INTERRUPTION_MODE_IOS_DO_NOT_MIX,
-          interruptionModeAndroid: Audio.INTERRUPTION_MODE_ANDROID_DO_NOT_MIX,
         });
         
         console.log('[AudioRecorder] Audio mode set successfully');
@@ -550,5 +550,14 @@ const styles = StyleSheet.create({
     color: '#57606f',
     textAlign: 'center',
     fontStyle: 'italic'
-  }
+  },
+  button: {
+    backgroundColor: '#f0f0f0',
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    marginVertical: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 }); 

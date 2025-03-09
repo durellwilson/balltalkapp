@@ -52,22 +52,96 @@ export const SOCCER = '#5856D6';
 export const TENNIS = '#FF2D55';
 export const BASEBALL = '#007AFF';
 
+// Define theme interface for better type safety
+export interface ThemeColors {
+  // Base colors
+  primary: string;
+  secondary: string;
+  accent: string;
+  
+  // UI elements
+  background: string;
+  cardBackground: string;
+  cardBackgroundLight: string;
+  text: string;
+  textSecondary: string;
+  border: string;
+  notification: string;
+  
+  // Interactive elements
+  tint: string;
+  tabIconDefault: string;
+  tabIconSelected: string;
+  buttonBackground: string;
+  buttonText: string;
+  inputBackground: string;
+  
+  // Status colors
+  success: string;
+  warning: string;
+  error: string;
+  info: string;
+}
+
 // Theme colors (can be used for dark/light mode)
-export const THEME = {
-  light: {
-    background: NEUTRAL_200,
-    card: NEUTRAL_100,
-    text: NEUTRAL_800,
-    border: NEUTRAL_400,
-    notification: ACCENT_2,
-  },
-  dark: {
-    background: NEUTRAL_900,
-    card: NEUTRAL_800,
-    text: NEUTRAL_200,
-    border: NEUTRAL_700,
-    notification: ACCENT_2,
-  },
+export const light: ThemeColors = {
+  // Base colors
+  primary: PRIMARY,
+  secondary: SECONDARY,
+  accent: ACCENT_1,
+  
+  // UI elements
+  background: NEUTRAL_200,
+  cardBackground: NEUTRAL_100,
+  cardBackgroundLight: NEUTRAL_300,
+  text: NEUTRAL_800,
+  textSecondary: NEUTRAL_700,
+  border: NEUTRAL_400,
+  notification: ACCENT_2,
+  
+  // Interactive elements
+  tint: PRIMARY,
+  tabIconDefault: NEUTRAL_600,
+  tabIconSelected: PRIMARY,
+  buttonBackground: PRIMARY,
+  buttonText: NEUTRAL_100,
+  inputBackground: NEUTRAL_300,
+  
+  // Status colors
+  success: SUCCESS,
+  warning: WARNING,
+  error: ERROR,
+  info: INFO,
+};
+
+export const dark: ThemeColors = {
+  // Base colors
+  primary: PRIMARY_LIGHT,
+  secondary: SECONDARY_LIGHT,
+  accent: ACCENT_1,
+  
+  // UI elements
+  background: NEUTRAL_900,
+  cardBackground: NEUTRAL_800,
+  cardBackgroundLight: NEUTRAL_700,
+  text: NEUTRAL_200,
+  textSecondary: NEUTRAL_400,
+  border: NEUTRAL_700,
+  notification: ACCENT_2,
+  
+  // Interactive elements
+  tint: PRIMARY_LIGHT,
+  tabIconDefault: NEUTRAL_500,
+  tabIconSelected: PRIMARY_LIGHT,
+  buttonBackground: PRIMARY,
+  buttonText: NEUTRAL_100,
+  inputBackground: NEUTRAL_700,
+  
+  // Status colors
+  success: SUCCESS,
+  warning: WARNING,
+  error: ERROR,
+  info: INFO,
 };
 
 // Export a default object for easy importing
@@ -104,5 +178,6 @@ export default {
   soccer: SOCCER,
   tennis: TENNIS,
   baseball: BASEBALL,
-  theme: THEME,
+  light,
+  dark,
 };

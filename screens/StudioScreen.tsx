@@ -22,6 +22,7 @@ import TrackUploader from '../components/studio/TrackUploader';
 import TrackBrowser from '../components/studio/TrackBrowser';
 import { Song } from '../models/Song';
 import SongService from '../services/SongService';
+import { useAppTheme } from '../components/ThemeProvider';
 
 // Main content component
 const StudioContent = () => {
@@ -34,6 +35,7 @@ const StudioContent = () => {
     isProcessing
   } = useAudio();
   const navigation = useNavigation();
+  const { theme, isDark } = useAppTheme();
   
   // State for studio mode
   const [studioMode, setStudioMode] = useState<'welcome' | 'record' | 'upload' | 'browse' | 'edit'>('welcome');
@@ -170,48 +172,42 @@ const StudioContent = () => {
   
   // Render welcome screen with options
   const renderWelcomeScreen = () => (
-    <View style={styles.welcomeContainer}>
-      <Text style={styles.welcomeTitle}>Studio</Text>
-      <Text style={styles.welcomeSubtitle}>Create, upload, or find tracks</Text>
+    <View style={[styles.welcomeContainer, { backgroundColor: theme.background }]}>
+      <Text style={[styles.welcomeTitle, { color: theme.text }]}>BallTalk Studio</Text>
+      <Text style={[styles.welcomeSubtitle, { color: theme.textSecondary }]}>Create, upload, and master your tracks</Text>
       
       <View style={styles.optionsContainer}>
-        <TouchableOpacity
-          style={styles.optionButton}
+        <TouchableOpacity 
+          style={[styles.optionButton, { backgroundColor: theme.card }]} 
           onPress={() => setStudioMode('record')}
         >
-          <View style={[styles.optionIcon, { backgroundColor: '#FF3B30' }]}>
-            <Ionicons name="mic" size={32} color="#FFFFFF" />
-          </View>
-          <View style={styles.optionTextContainer}>
-            <Text style={styles.optionTitle}>Record</Text>
-            <Text style={styles.optionDescription}>Record a new track using your microphone</Text>
-          </View>
+          <Ionicons name="mic" size={32} color={theme.tint} />
+          <Text style={[styles.optionText, { color: theme.text }]}>Record</Text>
+          <Text style={[styles.optionDescription, { color: theme.textSecondary }]}>
+            Record a new track directly in the app
+          </Text>
         </TouchableOpacity>
         
-        <TouchableOpacity
-          style={styles.optionButton}
+        <TouchableOpacity 
+          style={[styles.optionButton, { backgroundColor: theme.card }]} 
           onPress={() => setStudioMode('upload')}
         >
-          <View style={[styles.optionIcon, { backgroundColor: '#4CD964' }]}>
-            <Ionicons name="cloud-upload" size={32} color="#FFFFFF" />
-          </View>
-          <View style={styles.optionTextContainer}>
-            <Text style={styles.optionTitle}>Upload</Text>
-            <Text style={styles.optionDescription}>Upload an existing audio file from your device</Text>
-          </View>
+          <Ionicons name="cloud-upload" size={32} color={theme.tint} />
+          <Text style={[styles.optionText, { color: theme.text }]}>Upload</Text>
+          <Text style={[styles.optionDescription, { color: theme.textSecondary }]}>
+            Upload an existing audio file
+          </Text>
         </TouchableOpacity>
         
-        <TouchableOpacity
-          style={styles.optionButton}
+        <TouchableOpacity 
+          style={[styles.optionButton, { backgroundColor: theme.card }]} 
           onPress={() => setStudioMode('browse')}
         >
-          <View style={[styles.optionIcon, { backgroundColor: '#007AFF' }]}>
-            <Ionicons name="search" size={32} color="#FFFFFF" />
-          </View>
-          <View style={styles.optionTextContainer}>
-            <Text style={styles.optionTitle}>Browse</Text>
-            <Text style={styles.optionDescription}>Find tracks from other users to remix or sample</Text>
-          </View>
+          <Ionicons name="library" size={32} color={theme.tint} />
+          <Text style={[styles.optionText, { color: theme.text }]}>Browse</Text>
+          <Text style={[styles.optionDescription, { color: theme.textSecondary }]}>
+            Browse and edit your existing tracks
+          </Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -362,7 +358,7 @@ const StudioContent = () => {
   }
   
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: theme.background }]}>
       {renderStudioContent()}
       
       {isProcessing && (
@@ -389,9 +385,13 @@ const StudioContent = () => {
 
 // Main screen component with AudioProvider
 const StudioScreen = () => {
+  const { theme } = useAppTheme();
+  
   return (
     <AudioProvider>
-      <StudioContent />
+      <View style={[styles.container, { backgroundColor: theme.background }]}>
+        <StudioContent />
+      </View>
     </AudioProvider>
   );
 };
@@ -399,7 +399,6 @@ const StudioScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#1E1E1E',
     padding: 16
   },
   header: {

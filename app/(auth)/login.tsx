@@ -60,14 +60,17 @@ const Login = () => {
   // For demo purposes - pre-filled credentials
   const [showDemoOptions, setShowDemoOptions] = useState(false);
 
-  // Handle automatic redirects if user is already logged in
+  // Redirect to main app if already logged in
   useEffect(() => {
     // Test Firebase auth
     const authWorking = testFirebaseAuth();
     console.log('[Login] Firebase auth working:', authWorking);
     
     if (user) {
-      router.replace('/(tabs)');
+      // Delay navigation to ensure Root Layout is mounted
+      setTimeout(() => {
+        router.replace('/(tabs)');
+      }, 100);
     }
   }, [user]);
 

@@ -1,29 +1,11 @@
 import { Platform } from 'react-native';
 import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
-import { getAuth, connectAuthEmulator, Auth } from 'firebase/auth';
-import { getFirestore, connectFirestoreEmulator, Firestore } from 'firebase/firestore';
+import { getAuth, connectAuthEmulator, Auth, setPersistence, browserLocalPersistence, inMemoryPersistence } from 'firebase/auth';
+import { getFirestore, connectFirestoreEmulator, Firestore, enableIndexedDbPersistence } from 'firebase/firestore';
 import { getStorage, connectStorageEmulator, FirebaseStorage } from 'firebase/storage';
 
-// CRITICAL: Hardcoded Firebase configuration for when env vars fail
-// This ensures the app can still authenticate in all environments
-const hardcodedConfig = {
-  apiKey: "AIzaSyBPxNpjlx2UGD0j1tom8-i2GOlzUekigFc",
-  authDomain: "balltalkbeta.firebaseapp.com",
-  projectId: "balltalkbeta",
-  storageBucket: "balltalkbeta.appspot.com",
-  messagingSenderId: "628814403087",
-  appId: "1:628814403087:web:8fa13594e0608f5c2a357a",
-  measurementId: "G-5EH47PRLZP"
-  // Removed databaseURL as we're using Firestore, not Realtime Database
-};
-
-// Check if we have env vars, otherwise use hardcoded config
-const hasEnvConfig = 
-  process.env.EXPO_PUBLIC_FIREBASE_API_KEY && 
-  process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN;
-
-// Use hardcoded config directly for reliability
-const firebaseConfig = hasEnvConfig ? {
+// Firebase configuration from environment variables
+const firebaseConfig = {
   apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
   authDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN,
   projectId: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID,
@@ -31,92 +13,155 @@ const firebaseConfig = hasEnvConfig ? {
   messagingSenderId: process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
   appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID,
   measurementId: process.env.EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID
-  // Removed databaseURL as we're using Firestore, not Realtime Database
-} : hardcodedConfig;
+};
 
-// Debug log for Firebase config - Show ACTUAL values for debugging
-console.log('Firebase Config ACTUAL VALUES:', {
-  apiKey: firebaseConfig.apiKey ? 'SET (hidden for security)' : 'MISSING',
-  authDomain: firebaseConfig.authDomain,
-  projectId: firebaseConfig.projectId,
-  storageBucket: firebaseConfig.storageBucket,
-  messagingSenderId: firebaseConfig.messagingSenderId,
-  appId: firebaseConfig.appId ? 'SET (hidden for security)' : 'MISSING'
-  // Removed databaseURL from logging
-});
-console.log('Using configuration source:', hasEnvConfig ? 'Environment Variables' : 'Hardcoded Fallback');
-
-// Initialize Firebase
-console.log('Initializing Firebase app...');
-let firebaseApp: FirebaseApp;
-try {
-  // Check if Firebase app is already initialized
-  if (getApps().length === 0) {
-    firebaseApp = initializeApp(firebaseConfig);
-    console.log('Firebase app initialized successfully');
-  } else {
-    firebaseApp = getApp();
-    console.log('Using existing Firebase app');
+// Validate Firebase configuration
+const validateFirebaseConfig = () => {
+  const requiredKeys = ['apiKey', 'authDomain', 'projectId', 'storageBucket', 'appId'];
+  const missingKeys = requiredKeys.filter(key => !firebaseConfig[key]);
+  
+  if (missingKeys.length > 0) {
+    console.warn(`Missing required Firebase configuration keys: ${missingKeys.join(', ')}`);
+    console.warn('Please check your environment variables or .env file');
+    
+    // In development, we can provide more helpful information
+    if (__DEV__) {
+      console.info('For local development, make sure you have a .env file with the following variables:');
+      console.info('EXPO_PUBLIC_FIREBASE_API_KEY');
+      console.info('EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN');
+      console.info('EXPO_PUBLIC_FIREBASE_PROJECT_ID');
+      console.info('EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET');
+      console.info('EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID');
+      console.info('EXPO_PUBLIC_FIREBASE_APP_ID');
+      console.info('EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID (optional)');
+    }
+    
+    return false;
   }
-} catch (error) {
-  console.error('Error initializing Firebase app:', error);
-  // Fallback to a new initialization if getting the existing app fails
-  firebaseApp = initializeApp(hardcodedConfig);
-  console.log('Firebase app initialized with hardcoded fallback config');
-}
-
-// Initialize Firebase services
-let auth: Auth;
-let db: Firestore;
-let storage: FirebaseStorage;
-
-try {
-  auth = getAuth(firebaseApp);
-  db = getFirestore(firebaseApp);
-  storage = getStorage(firebaseApp);
   
-  console.log('Firebase services initialized:', {
-    auth: auth ? '✓ Available' : '✗ Unavailable',
-    db: db ? '✓ Available' : '✗ Unavailable',
-    storage: storage ? '✓ Available' : '✗ Unavailable'
-  });
-  
-  // Connect to emulators if in development and explicitly enabled
+  return true;
+};
+
+// Initialize Firebase with error handling
+const initializeFirebase = (): FirebaseApp => {
+  try {
+    // Check if Firebase app is already initialized
+    if (getApps().length === 0) {
+      if (!validateFirebaseConfig()) {
+        throw new Error('Invalid Firebase configuration');
+      }
+      
+      const app = initializeApp(firebaseConfig);
+      console.log('Firebase app initialized successfully');
+      return app;
+    } else {
+      const app = getApp();
+      console.log('Using existing Firebase app');
+      return app;
+    }
+  } catch (error) {
+    console.error('Error initializing Firebase app:', error);
+    throw error;
+  }
+};
+
+// Initialize Firebase services with error handling
+const initializeServices = (app: FirebaseApp) => {
+  let auth: Auth;
+  let db: Firestore;
+  let storage: FirebaseStorage;
+
+  try {
+    auth = getAuth(app);
+    db = getFirestore(app);
+    storage = getStorage(app);
+    
+    // Set persistence for authentication
+    if (Platform.OS === 'web') {
+      // For web, use browserLocalPersistence to keep the user logged in
+      setPersistence(auth, browserLocalPersistence)
+        .then(() => {
+          console.log('Firebase auth persistence set to browserLocalPersistence');
+        })
+        .catch((error) => {
+          console.error('Error setting auth persistence:', error);
+        });
+    }
+    
+    console.log('Firebase services initialized successfully');
+    
+    // Enable offline persistence for Firestore
+    if (Platform.OS === 'web') {
+      enableIndexedDbPersistence(db)
+        .then(() => {
+          console.log('Firestore offline persistence enabled for web');
+        })
+        .catch((err) => {
+          if (err.code === 'failed-precondition') {
+            console.warn('Multiple tabs open, persistence can only be enabled in one tab at a time.');
+          } else if (err.code === 'unimplemented') {
+            console.warn('The current browser does not support all of the features required to enable persistence');
+          } else {
+            console.error('Error enabling Firestore persistence:', err);
+          }
+        });
+    } else {
+      // For native platforms
+      enableIndexedDbPersistence(db).catch((err) => {
+        console.error('Error enabling Firestore offline persistence:', err);
+      });
+    }
+    
+    return { auth, db, storage };
+  } catch (error) {
+    console.error('Error initializing Firebase services:', error);
+    throw error;
+  }
+};
+
+// Connect to Firebase emulators if in development mode
+const connectToEmulators = (auth: Auth, db: Firestore, storage: FirebaseStorage) => {
   const useEmulators = process.env.EXPO_PUBLIC_USE_FIREBASE_EMULATOR === 'true';
+  
   if (useEmulators) {
     console.log('Connecting to Firebase emulators...');
     
     // Use localhost for emulators
     const host = Platform.OS === 'web' ? 'localhost' : '10.0.2.2'; // Use 10.0.2.2 for Android emulator
     
-    if (auth) {
+    try {
       connectAuthEmulator(auth, `http://${host}:9099`);
-      console.log('Connected to Auth emulator');
-    }
-    
-    if (db) {
       connectFirestoreEmulator(db, host, 8080);
-      console.log('Connected to Firestore emulator');
-    }
-    
-    if (storage) {
       connectStorageEmulator(storage, host, 9199);
-      console.log('Connected to Storage emulator');
+      
+      console.log('Connected to Firebase emulators successfully');
+    } catch (error) {
+      console.error('Error connecting to Firebase emulators:', error);
     }
   } else {
     console.log('Using production Firebase services');
   }
-} catch (error) {
-  console.error('Error initializing Firebase services:', error);
-  // Initialize with default values to prevent undefined errors
-  auth = getAuth();
-  db = getFirestore();
-  storage = getStorage();
-}
+};
 
-// Check auth state
-const currentUser = auth.currentUser;
-console.log('Current auth state:', currentUser ? `User signed in: ${currentUser.uid}` : 'No user signed in');
+// Initialize Firebase
+let firebaseApp: FirebaseApp;
+let auth: Auth;
+let db: Firestore;
+let storage: FirebaseStorage;
+
+try {
+  firebaseApp = initializeFirebase();
+  const services = initializeServices(firebaseApp);
+  auth = services.auth;
+  db = services.db;
+  storage = services.storage;
+  
+  connectToEmulators(auth, db, storage);
+} catch (error) {
+  console.error('Fatal error initializing Firebase:', error);
+  // In a real app, you might want to show a user-friendly error message
+  // or fallback to a degraded mode
+}
 
 // Export
 export { firebaseApp, auth, db, storage };

@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import NetworkErrorHandler from '../../services/NetworkErrorHandler';
 import Colors from '../../constants/Colors';
 import { Ionicons } from '@expo/vector-icons';
@@ -11,65 +11,31 @@ interface NetworkErrorBoundaryProps {
 }
 
 /**
- * A component that displays a fallback UI when there is no network connectivity
- * and provides retry functionality when connectivity is restored.
+ * NetworkErrorContent - displays the error UI when there's no connection
  */
-const NetworkErrorBoundary: React.FC<NetworkErrorBoundaryProps> = ({
-  children,
-  onRetry,
-  testID,
+const NetworkErrorContent = React.memo(({ 
+  isRetrying, 
+  onRetry 
+}: { 
+  isRetrying: boolean; 
+  onRetry: () => void;
 }) => {
-  const [isConnected, setIsConnected] = useState(true);
-  const [isRetrying, setIsRetrying] = useState(false);
+  // Style memoization
+  const retryButtonStyle = useMemo(() => [
+    styles.retryButton,
+    isRetrying && styles.retryButtonDisabled
+  ], [isRetrying]);
   
-  useEffect(() => {
-    const networkHandler = NetworkErrorHandler.getInstance();
-    
-    // Subscribe to network connectivity changes
-    const unsubscribe = networkHandler.addConnectivityListener((connected) => {
-      setIsConnected(connected);
-      
-      // If connectivity is restored and we were retrying, trigger the retry
-      if (connected && isRetrying) {
-        handleRetry();
-      }
-    });
-    
-    // Check current connectivity status
-    networkHandler.checkConnectivity().then(setIsConnected);
-    
-    // Clean up subscription
-    return () => {
-      unsubscribe();
-    };
-  }, [isRetrying]);
+  const iconStyle = useMemo(() => 
+    isRetrying ? styles.spinningIcon : undefined, 
+    [isRetrying]
+  );
   
-  const handleRetry = () => {
-    setIsRetrying(true);
-    
-    // If we're already connected, trigger the retry immediately
-    if (isConnected) {
-      if (onRetry) {
-        onRetry();
-      }
-      setIsRetrying(false);
-    }
-    // Otherwise, wait for connectivity to be restored (handled in the effect)
-  };
-  
-  // If connected, render children
-  if (isConnected) {
-    return <>{children}</>;
-  }
-  
-  // Otherwise, render the fallback UI
   return (
-    <View style={styles.container} testID={testID || 'network-error-boundary'}>
-      <Image 
-        source={require('../../assets/images/no-connection.png')} 
-        style={styles.image}
-        testID="no-connection-image"
-      />
+    <View style={styles.container} testID="network-error-boundary">
+      <View style={styles.iconContainer} testID="no-connection-icon">
+        <Ionicons name="cloud-offline" size={80} color={Colors.warning} />
+      </View>
       
       <Text style={styles.title}>No Internet Connection</Text>
       
@@ -78,8 +44,8 @@ const NetworkErrorBoundary: React.FC<NetworkErrorBoundaryProps> = ({
       </Text>
       
       <TouchableOpacity 
-        style={styles.retryButton} 
-        onPress={handleRetry}
+        style={retryButtonStyle} 
+        onPress={onRetry}
         disabled={isRetrying}
         testID="retry-connection-button"
       >
@@ -87,7 +53,7 @@ const NetworkErrorBoundary: React.FC<NetworkErrorBoundaryProps> = ({
           name={isRetrying ? "sync-circle" : "refresh"} 
           size={20} 
           color="#FFFFFF" 
-          style={isRetrying ? styles.spinningIcon : undefined}
+          style={iconStyle}
         />
         <Text style={styles.retryButtonText}>
           {isRetrying ? 'Waiting for Connection...' : 'Retry'}
@@ -95,6 +61,90 @@ const NetworkErrorBoundary: React.FC<NetworkErrorBoundaryProps> = ({
       </TouchableOpacity>
     </View>
   );
+});
+
+/**
+ * A boundary component that displays a fallback UI when there's no network connectivity
+ */
+const NetworkErrorBoundary = ({ children, onRetry, testID }: NetworkErrorBoundaryProps) => {
+  // Maintain connectivity state with stable references
+  const [isConnected, setIsConnected] = useState(true);
+  const [isRetrying, setIsRetrying] = useState(false);
+  
+  // Single NetworkErrorHandler instance using ref to prevent recreation
+  const networkHandlerRef = useRef<NetworkErrorHandler>();
+  if (!networkHandlerRef.current) {
+    networkHandlerRef.current = NetworkErrorHandler.getInstance();
+  }
+  
+  // Mounted state tracking
+  const isMountedRef = useRef(true);
+  
+  // On unmount
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+  
+  // Handle connectivity changes
+  useEffect(() => {
+    const handler = networkHandlerRef.current;
+    if (!handler) return;
+    
+    // Safe state setter to prevent updates after unmount
+    const safeSetState = (connected: boolean) => {
+      if (isMountedRef.current) {
+        setIsConnected(connected);
+      }
+    };
+    
+    // Check current connectivity status first
+    handler.checkConnectivity().then(safeSetState);
+    
+    // Subscribe to connectivity changes
+    const unsubscribe = handler.addConnectivityListener((connected) => {
+      if (!isMountedRef.current) return;
+      
+      safeSetState(connected);
+      
+      // Handle successful connection during retry state
+      if (connected && isMountedRef.current) {
+        // Use functional update to access the latest state
+        setIsRetrying(currentIsRetrying => {
+          if (currentIsRetrying && onRetry) {
+            onRetry();
+          }
+          return currentIsRetrying ? false : currentIsRetrying;
+        });
+      }
+    });
+    
+    // Cleanup
+    return () => {
+      unsubscribe();
+    };
+  }, [onRetry]);
+  
+  // Handle retry press
+  const handleRetry = useCallback(() => {
+    if (!isMountedRef.current) return;
+    
+    setIsRetrying(true);
+    
+    if (isConnected && onRetry) {
+      onRetry();
+      setIsRetrying(false);
+    }
+  }, [isConnected, onRetry]);
+  
+  // If connected, render children
+  if (isConnected) {
+    return <>{children}</>;
+  }
+  
+  // Otherwise, show error content
+  return <NetworkErrorContent isRetrying={isRetrying} onRetry={handleRetry} />;
 };
 
 const styles = StyleSheet.create({
@@ -105,10 +155,14 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.neutral100,
     padding: 20,
   },
-  image: {
+  iconContainer: {
     width: 150,
     height: 150,
+    alignItems: 'center',
+    justifyContent: 'center',
     marginBottom: 20,
+    backgroundColor: 'rgba(255, 149, 0, 0.1)',
+    borderRadius: 75,
   },
   title: {
     fontSize: 22,
@@ -129,6 +183,9 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderRadius: 8,
     alignItems: 'center',
+  },
+  retryButtonDisabled: {
+    opacity: 0.7,
   },
   retryButtonText: {
     color: '#FFFFFF',

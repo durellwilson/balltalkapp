@@ -11,7 +11,8 @@ import {
   ActivityIndicator,
   Alert,
   Platform,
-  Image
+  Image,
+  Share
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 // DateTimePicker import removed
@@ -29,6 +30,8 @@ import {
   NEUTRAL_600, 
   NEUTRAL_800 
 } from '../../constants/Colors';
+import * as Linking from 'expo-linking';
+import * as Clipboard from 'expo-clipboard';
 
 interface TrackSharingModalProps {
   visible: boolean;
@@ -54,13 +57,19 @@ const TrackSharingModal: React.FC<TrackSharingModalProps> = ({
   const [selectedRecipient, setSelectedRecipient] = useState<User | null>(null);
   const [shareMessage, setShareMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
+  const [shareUrl, setShareUrl] = useState<string>('');
+  const [showSocialOptions, setShowSocialOptions] = useState(false);
   
   const trackSharingService = new TrackSharingService();
   const userService = new UserService();
   
   useEffect(() => {
     loadRecentRecipients();
-  }, []);
+    if (track && track.id) {
+      const baseUrl = 'https://balltalkbeta.web.app/track/';
+      setShareUrl(`${baseUrl}${track.id}`);
+    }
+  }, [track]);
   
   const loadRecentRecipients = async () => {
     try {
@@ -170,6 +179,62 @@ const TrackSharingModal: React.FC<TrackSharingModalProps> = ({
     }
   };
   
+  const handleSocialShare = async (platform: 'twitter' | 'instagram' | 'facebook' | 'tiktok' | 'copy' | 'message') => {
+    try {
+      const title = track.title || 'Check out this track';
+      const message = `Check out "${title}" on BallTalk! ${shareUrl}`;
+      
+      switch (platform) {
+        case 'twitter':
+          const twitterUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(message)}`;
+          await Linking.openURL(twitterUrl);
+          break;
+          
+        case 'facebook':
+          const fbUrl = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}&quote=${encodeURIComponent(message)}`;
+          await Linking.openURL(fbUrl);
+          break;
+          
+        case 'instagram':
+          // Instagram doesn't support direct sharing via URL scheme
+          // Copy to clipboard and prompt user to share manually
+          await Clipboard.setStringAsync(message);
+          Alert.alert(
+            'Share to Instagram',
+            'Link copied to clipboard. Open Instagram and paste in your story or direct message.'
+          );
+          break;
+          
+        case 'tiktok':
+          // TikTok doesn't support direct sharing via URL scheme
+          // Copy to clipboard and prompt user to share manually
+          await Clipboard.setStringAsync(message);
+          Alert.alert(
+            'Share to TikTok',
+            'Link copied to clipboard. Open TikTok and paste in your video description or message.'
+          );
+          break;
+          
+        case 'copy':
+          await Clipboard.setStringAsync(shareUrl);
+          Alert.alert('Success', 'Link copied to clipboard');
+          break;
+          
+        case 'message':
+          // Use React Native's Share API for native sharing
+          await Share.share({
+            message,
+            url: shareUrl,
+            title,
+          });
+          break;
+      }
+    } catch (error) {
+      console.error('Error sharing to social media:', error);
+      Alert.alert('Sharing Error', 'Failed to share. Please try again.');
+    }
+  };
+  
   const renderPermissionItem = (permission: SharePermission, label: string, description: string) => (
     <TouchableOpacity
       key={permission}
@@ -187,6 +252,67 @@ const TrackSharingModal: React.FC<TrackSharingModalProps> = ({
       </View>
       <Text style={styles.permissionDescription}>{description}</Text>
     </TouchableOpacity>
+  );
+  
+  const renderSocialMediaOptions = () => (
+    <View style={styles.socialMediaContainer}>
+      <Text style={styles.sectionTitle}>Share on Social Media</Text>
+      
+      <View style={styles.socialButtonsRow}>
+        <TouchableOpacity 
+          style={[styles.socialButton, styles.twitterButton]} 
+          onPress={() => handleSocialShare('twitter')}
+        >
+          <Ionicons name="logo-twitter" size={24} color="#FFFFFF" />
+          <Text style={styles.socialButtonText}>Twitter</Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity 
+          style={[styles.socialButton, styles.facebookButton]} 
+          onPress={() => handleSocialShare('facebook')}
+        >
+          <Ionicons name="logo-facebook" size={24} color="#FFFFFF" />
+          <Text style={styles.socialButtonText}>Facebook</Text>
+        </TouchableOpacity>
+      </View>
+      
+      <View style={styles.socialButtonsRow}>
+        <TouchableOpacity 
+          style={[styles.socialButton, styles.instagramButton]} 
+          onPress={() => handleSocialShare('instagram')}
+        >
+          <Ionicons name="logo-instagram" size={24} color="#FFFFFF" />
+          <Text style={styles.socialButtonText}>Instagram</Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity 
+          style={[styles.socialButton, styles.tiktokButton]} 
+          onPress={() => handleSocialShare('tiktok')}
+        >
+          <Ionicons name="musical-notes" size={24} color="#FFFFFF" />
+          <Text style={styles.socialButtonText}>TikTok</Text>
+        </TouchableOpacity>
+      </View>
+      
+      <View style={styles.linkContainer}>
+        <Text style={styles.linkText} numberOfLines={1}>{shareUrl}</Text>
+        <TouchableOpacity 
+          style={styles.copyButton}
+          onPress={() => handleSocialShare('copy')}
+        >
+          <Ionicons name="copy-outline" size={20} color="#FFFFFF" />
+          <Text style={styles.copyButtonText}>Copy</Text>
+        </TouchableOpacity>
+      </View>
+      
+      <TouchableOpacity 
+        style={styles.messageButton}
+        onPress={() => handleSocialShare('message')}
+      >
+        <Ionicons name="share-outline" size={20} color="#FFFFFF" />
+        <Text style={styles.messageButtonText}>Share via Message</Text>
+      </TouchableOpacity>
+    </View>
   );
   
   return (
@@ -320,6 +446,24 @@ const TrackSharingModal: React.FC<TrackSharingModalProps> = ({
               )}
             </View>
           </ScrollView>
+          
+          <View style={styles.divider} />
+          
+          <TouchableOpacity 
+            style={styles.socialToggleButton}
+            onPress={() => setShowSocialOptions(!showSocialOptions)}
+          >
+            <Text style={styles.socialToggleText}>
+              {showSocialOptions ? 'Hide Social Sharing Options' : 'Show Social Sharing Options'}
+            </Text>
+            <Ionicons 
+              name={showSocialOptions ? 'chevron-up' : 'chevron-down'} 
+              size={20} 
+              color={PRIMARY}
+            />
+          </TouchableOpacity>
+          
+          {showSocialOptions && renderSocialMediaOptions()}
           
           <View style={styles.modalFooter}>
             <TouchableOpacity
@@ -527,6 +671,120 @@ const styles = StyleSheet.create({
   },
   loader: {
     marginVertical: 8,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: NEUTRAL_400,
+    marginVertical: 15,
+    width: '100%',
+  },
+  
+  socialToggleButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 10,
+    marginVertical: 5,
+  },
+  
+  socialToggleText: {
+    color: PRIMARY,
+    fontWeight: '600',
+    marginRight: 5,
+  },
+  
+  socialMediaContainer: {
+    marginTop: 10,
+    padding: 15,
+    backgroundColor: NEUTRAL_100,
+    borderRadius: 12,
+    width: '100%',
+  },
+  
+  socialButtonsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  
+  socialButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 12,
+    borderRadius: 8,
+    flex: 0.48,
+  },
+  
+  socialButtonText: {
+    color: '#FFFFFF',
+    fontWeight: '600',
+    marginLeft: 8,
+  },
+  
+  twitterButton: {
+    backgroundColor: '#1DA1F2',
+  },
+  
+  facebookButton: {
+    backgroundColor: '#4267B2',
+  },
+  
+  instagramButton: {
+    backgroundColor: '#C13584',
+  },
+  
+  tiktokButton: {
+    backgroundColor: '#000000',
+  },
+  
+  linkContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: NEUTRAL_100,
+    borderWidth: 1,
+    borderColor: NEUTRAL_400,
+    borderRadius: 8,
+    marginTop: 10,
+    marginBottom: 15,
+    padding: 10,
+  },
+  
+  linkText: {
+    flex: 1,
+    color: NEUTRAL_600,
+    marginRight: 10,
+  },
+  
+  copyButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: PRIMARY,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+  },
+  
+  copyButtonText: {
+    color: '#FFFFFF',
+    fontWeight: '600',
+    marginLeft: 5,
+  },
+  
+  messageButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: ACCENT_1,
+    padding: 12,
+    borderRadius: 8,
+    marginTop: 5,
+  },
+  
+  messageButtonText: {
+    color: '#FFFFFF',
+    fontWeight: '600',
+    marginLeft: 8,
   },
 });
 

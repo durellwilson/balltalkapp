@@ -9,13 +9,19 @@ import {
   getDoc, 
   FirestoreError, 
   updateDoc,
-  Firestore
+  Firestore,
+  getFirestore,
+  addDoc,
+  deleteDoc,
+  limit
 } from 'firebase/firestore';
 import { 
   ref, 
   getDownloadURL, 
   uploadBytes,
-  FirebaseStorage
+  FirebaseStorage,
+  getStorage,
+  deleteObject
 } from 'firebase/storage';
 import type { Track, Collaborator } from '../components/studio/StudioTypes';
 import { Audio } from 'expo-av';
@@ -24,6 +30,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { getDevicePlatform, getActiveDeviceSettings, simulateNetworkRequest } from '../utils/deviceSimulation';
 import { db, storage } from '../src/lib/firebase';
 import storage_lib from '@react-native-firebase/storage';
+import * as FileSystem from 'expo-file-system';
 
 // Properly type the Firebase services
 const firebaseDb: Firestore = db as Firestore;
@@ -34,13 +41,16 @@ interface Project {
     name: string;
     createdAt: string;
     updatedAt: string;
-    ownerId: string;
-    isPublic: boolean;
+    userId: string;
     tracks: Track[];
-    tempo?: number; // Make tempo optional
+    tempo?: number;
+    isPublic?: boolean;
+    description?: string;
+    tags?: string[];
     collaborators?: Collaborator[];
     isCollaborative?: boolean;
     collaborationSessionId?: string;
+    coverArtUrl?: string;
 }
 
 interface Recording {
@@ -635,56 +645,113 @@ async stopRecording(): Promise<Recording | null> {
     }
 
     // Function to create a new project
-    async createProject(userId: string, name: string, tempo: number = 120): Promise<Project | null> { // Add tempo parameter with default value
+    async createProject(userId: string, name: string, tempo: number = 120): Promise<Project | null> {
         try {
             const projectId = uuidv4();
             const now = new Date().toISOString();
 
-            // Create a new project with default tracks
+            // Create default tracks with proper track numbers
+            const defaultTracks: Track[] = [
+                {
+                    id: uuidv4(),
+                    name: 'Beat',
+                    isPlaying: false,
+                    isRecording: false,
+                    volume: 1.0,
+                    pan: 0,
+                    mute: false,
+                    solo: false,
+                    trackNumber: 1,
+                    recordingIds: [],
+                    createdAt: now
+                },
+                {
+                    id: uuidv4(),
+                    name: 'Vocals',
+                    isPlaying: false,
+                    isRecording: false,
+                    volume: 1.0,
+                    pan: 0,
+                    mute: false,
+                    solo: false,
+                    trackNumber: 2,
+                    recordingIds: [],
+                    createdAt: now
+                }
+            ];
+
+            // Create a new project with proper initialization
             const newProject: Project = {
                 id: projectId,
                 name,
                 createdAt: now,
                 updatedAt: now,
-                ownerId: userId,
+                userId,
+                tracks: defaultTracks,
+                tempo,
                 isPublic: false,
-                tracks: [
-                    {
-                      id: uuidv4(), name: 'Beat', isPlaying: false, isRecording: false, volume: 1.0,
-                      trackNumber: null,
-                      recordingIds: []
-                    },
-                    {
-                      id: uuidv4(), name: 'Vocals', isPlaying: false, isRecording: false, volume: 1.0,
-                      trackNumber: null,
-                      recordingIds: []
-                    }
-                ],
-                tempo: tempo, // Set tempo here
+                description: '',
+                tags: []
             };
 
-            if (Platform.OS === 'web' && typeof window !== 'undefined') {
-                // Save to Firestore
-                try {
-                    const projectRef = doc(firebaseDb, PROJECTS_COLLECTION, projectId);
-                    await setDoc(projectRef, newProject);
-                    console.log('Project created successfully:', projectId);
-                } catch (error) {
-                    console.error('Error saving project to Firestore:', error);
-                    return null;
-                }
-            } else {
-                // For React Native, just log
-                console.log('Created new project (simulated):', newProject);
+            // Save to Firestore
+            try {
+                const projectRef = doc(firebaseDb, PROJECTS_COLLECTION, projectId);
+                await setDoc(projectRef, newProject);
+                console.log('[DawService] Project created successfully:', projectId);
+                
+                // Set this as the current project
+                this.currentProjectId = projectId;
+                
+                return newProject;
+            } catch (error) {
+                console.error('[DawService] Error saving project to Firestore:', error);
+                return null;
+            }
+        } catch (error) {
+            console.error('[DawService] Error creating project:', error);
+            return null;
+        }
+    }
+
+    // Static method for creating projects (uses instance method internally)
+    static async createProject(
+        userId: string,
+        name: string,
+        options: {
+            tempo?: number;
+            description?: string;
+            isPublic?: boolean;
+            tags?: string[];
+        } = {}
+    ): Promise<Project> {
+        try {
+            const dawService = new DawService();
+            const project = await dawService.createProject(
+                userId,
+                name,
+                options.tempo || 120
+            );
+
+            if (!project) {
+                throw new Error('Failed to create project');
             }
 
-            // Set this as the current project
-            this.currentProjectId = projectId;
+            // Update additional options if provided
+            if (options.description || options.isPublic !== undefined || options.tags) {
+                const projectRef = doc(firebaseDb, PROJECTS_COLLECTION, project.id);
+                await updateDoc(projectRef, {
+                    description: options.description || '',
+                    isPublic: options.isPublic || false,
+                    tags: options.tags || [],
+                    updatedAt: new Date().toISOString()
+                });
+            }
 
-            return newProject;
+            return project;
         } catch (error) {
-            console.error('Error creating project:', error);
-            return null;
+            console.error('[DawService] Error in static createProject:', error);
+            throw new Error(`Failed to create project: ${(error as Error).message}`);
         }
     }
 
@@ -753,21 +820,23 @@ async stopRecording(): Promise<Recording | null> {
                         name: 'My First Song',
                         createdAt: now,
                         updatedAt: now,
-                        ownerId: userId,
-                        isPublic: false,
+                        userId: userId,
                         tracks: [
                             {
                               id: uuidv4(), name: 'Beat', isPlaying: false, isRecording: false, volume: 1.0,
-                              trackNumber: null,
+                              trackNumber: 1,
                               recordingIds: []
                             },
                             {
                               id: uuidv4(), name: 'Vocals', isPlaying: false, isRecording: false, volume: 1.0,
-                              trackNumber: null,
+                              trackNumber: 2,
                               recordingIds: []
                             }
                         ],
-                        tempo: 120, // Add tempo
+                        tempo: 120,
+                        isPublic: false,
+                        description: 'My first project',
+                        tags: ['hip-hop', 'demo']
                     }
                 ];
 
@@ -882,7 +951,7 @@ async stopRecording(): Promise<Recording | null> {
         const projectData = projectDoc.data() as Project;
         
         // Check if user is the owner
-        if (projectData.ownerId !== userId) {
+        if (projectData.userId !== userId) {
           console.error('Only the project owner can enable collaboration');
           return null;
         }
@@ -928,7 +997,7 @@ async stopRecording(): Promise<Recording | null> {
         const projectData = projectDoc.data() as Project;
         
         // Check if user is the owner
-        if (projectData.ownerId !== userId) {
+        if (projectData.userId !== userId) {
           console.error('Only the project owner can add collaborators');
           return null;
         }
@@ -1014,7 +1083,7 @@ async stopRecording(): Promise<Recording | null> {
         const projectData = projectDoc.data() as Project;
         
         // Check if user is the owner
-        if (projectData.ownerId !== userId) {
+        if (projectData.userId !== userId) {
           console.error('Only the project owner can remove collaborators');
           return null;
         }
@@ -1057,7 +1126,7 @@ async stopRecording(): Promise<Recording | null> {
         // Get projects where user is the owner and collaboration is enabled
         const ownerQuery = query(
           collection(firebaseDb, PROJECTS_COLLECTION),
-          where('ownerId', '==', userId),
+          where('userId', '==', userId),
           where('isCollaborative', '==', true),
           orderBy('updatedAt', 'desc')
         );
@@ -1286,6 +1355,278 @@ async stopRecording(): Promise<Recording | null> {
         throw error;
       }
     }
+
+    /**
+     * Get projects for a user
+     * 
+     * @param {string} userId - ID of the user
+     * @param {number} limitCount - Maximum number of projects to return
+     * @returns {Promise<Project[]>} Array of user projects
+     */
+    static async getUserProjects(userId: string, limitCount: number = 10): Promise<Project[]> {
+      try {
+        if (!userId) {
+          throw new Error('User ID is required');
+        }
+        
+        const db = getFirestore();
+        // Simplify the query to match the existing index in firestore.indexes.json
+        const projectsQuery = query(
+          collection(db, PROJECTS_COLLECTION),
+          where('userId', '==', userId),
+          orderBy('updatedAt', 'desc')
+        );
+        
+        const querySnapshot = await getDocs(projectsQuery);
+        const projects: Project[] = [];
+        
+        querySnapshot.forEach((doc) => {
+          const projectData = doc.data();
+          projects.push({
+            ...projectData,
+            id: doc.id,
+            tempo: projectData.tempo || 120, // Ensure tempo is always defined
+            tracks: projectData.tracks || [],
+          } as Project);
+        });
+        
+        // Handle limit in memory to avoid index issues
+        return projects.slice(0, limitCount);
+      } catch (error) {
+        console.error('Error getting user projects:', error);
+        throw new Error(`Failed to get user projects: ${(error as Error).message}`);
+      }
+    }
+    
+    /**
+     * Get a project by ID
+     * 
+     * @param {string} projectId - ID of the project
+     * @returns {Promise<Project>} The project
+     */
+    static async getProject(projectId: string): Promise<Project> {
+      try {
+        if (!projectId) {
+          throw new Error('Project ID is required');
+        }
+        
+        const db = getFirestore();
+        const projectDoc = await getDoc(doc(db, PROJECTS_COLLECTION, projectId));
+        
+        if (!projectDoc.exists()) {
+          throw new Error('Project not found');
+        }
+        
+        const projectData = projectDoc.data();
+        
+        return {
+          ...projectData,
+          id: projectDoc.id,
+          tempo: projectData.tempo || 120, // Ensure tempo is always defined
+          tracks: projectData.tracks || [],
+        } as Project;
+      } catch (error) {
+        console.error('Error getting project:', error);
+        throw new Error(`Failed to get project: ${(error as Error).message}`);
+      }
+    }
+    
+    /**
+     * Delete a project
+     * 
+     * @param {string} projectId - ID of the project to delete
+     * @returns {Promise<void>}
+     */
+    static async deleteProject(projectId: string): Promise<void> {
+      try {
+        if (!projectId) {
+          throw new Error('Project ID is required');
+        }
+        
+        const db = getFirestore();
+        
+        // Get the project to check for recordings to delete
+        const project = await this.getProject(projectId);
+        
+        // Delete all recordings associated with the project
+        for (const track of project.tracks) {
+          if (track.audioUri) {
+            try {
+              // Delete the recording file from storage
+              const storage = getStorage();
+              const storageRef = ref(storage, track.audioUri);
+              await deleteObject(storageRef);
+            } catch (storageError) {
+              console.warn('Error deleting recording file:', storageError);
+              // Continue with deletion even if storage deletion fails
+            }
+          }
+        }
+        
+        // Delete the project document
+        await deleteDoc(doc(db, PROJECTS_COLLECTION, projectId));
+      } catch (error) {
+        console.error('Error deleting project:', error);
+        throw new Error(`Failed to delete project: ${(error as Error).message}`);
+      }
+    }
+    
+    /**
+     * Add a track to a project
+     * 
+     * @param {string} projectId - ID of the project
+     * @param {string} trackName - Name of the track
+     * @returns {Promise<Project>} The updated project
+     */
+    static async addTrack(projectId: string, trackName: string): Promise<Project> {
+      try {
+        if (!projectId) {
+          throw new Error('Project ID is required');
+        }
+        
+        if (!trackName) {
+          throw new Error('Track name is required');
+        }
+        
+        // Get the current project
+        const project = await this.getProject(projectId);
+        
+        // Create a new track
+        const newTrack: Track = {
+          id: uuidv4(),
+          name: trackName,
+          isRecording: false,
+          isPlaying: false,
+          volume: 1.0,
+          pan: 0,
+          mute: false,
+          solo: false,
+          trackNumber: project.tracks.length + 1,
+          recordingIds: [],
+          createdAt: new Date().toISOString(),
+        };
+        
+        // Add the track to the project
+        const updatedProject: Project = {
+          ...project,
+          tracks: [...project.tracks, newTrack],
+          updatedAt: new Date().toISOString(),
+        };
+        
+        // Update the project in Firestore
+        return await this.updateProject(updatedProject);
+      } catch (error) {
+        console.error('Error adding track:', error);
+        throw new Error(`Failed to add track: ${(error as Error).message}`);
+      }
+    }
+    
+    /**
+     * Update a track in a project
+     * 
+     * @param {string} projectId - ID of the project
+     * @param {Track} track - The updated track
+     * @returns {Promise<Project>} The updated project
+     */
+    static async updateTrack(projectId: string, track: Track): Promise<Project> {
+      try {
+        if (!projectId) {
+          throw new Error('Project ID is required');
+        }
+        
+        if (!track.id) {
+          throw new Error('Track ID is required');
+        }
+        
+        // Get the current project
+        const project = await this.getProject(projectId);
+        
+        // Find the track index
+        const trackIndex = project.tracks.findIndex((t) => t.id === track.id);
+        
+        if (trackIndex === -1) {
+          throw new Error('Track not found in project');
+        }
+        
+        // Update the track
+        const updatedTracks = [...project.tracks];
+        updatedTracks[trackIndex] = {
+          ...track,
+          lastModified: new Date().toISOString(),
+        };
+        
+        // Update the project
+        const updatedProject: Project = {
+          ...project,
+          tracks: updatedTracks,
+          updatedAt: new Date().toISOString(),
+        };
+        
+        // Update the project in Firestore
+        return await this.updateProject(updatedProject);
+      } catch (error) {
+        console.error('Error updating track:', error);
+        throw new Error(`Failed to update track: ${(error as Error).message}`);
+      }
+    }
+    
+    /**
+     * Delete a track from a project
+     * 
+     * @param {string} projectId - ID of the project
+     * @param {string} trackId - ID of the track to delete
+     * @returns {Promise<Project>} The updated project
+     */
+    static async deleteTrack(projectId: string, trackId: string): Promise<Project> {
+      try {
+        if (!projectId) {
+          throw new Error('Project ID is required');
+        }
+        
+        if (!trackId) {
+          throw new Error('Track ID is required');
+        }
+        
+        // Get the current project
+        const project = await this.getProject(projectId);
+        
+        // Find the track
+        const track = project.tracks.find((t) => t.id === trackId);
+        
+        if (!track) {
+          throw new Error('Track not found in project');
+        }
+        
+        // Delete the track's audio file if it exists
+        if (track.audioUri) {
+          try {
+            const storage = getStorage();
+            const storageRef = ref(storage, track.audioUri);
+            await deleteObject(storageRef);
+          } catch (storageError) {
+            console.warn('Error deleting track audio file:', storageError);
+            // Continue with deletion even if storage deletion fails
+          }
+        }
+        
+        // Remove the track from the project
+        const updatedProject: Project = {
+          ...project,
+          tracks: project.tracks.filter((t) => t.id !== trackId),
+          updatedAt: new Date().toISOString(),
+        };
+        
+        // Update the project in Firestore
+        return await this.updateProject(updatedProject);
+      } catch (error) {
+        console.error('Error deleting track:', error);
+        throw new Error(`Failed to delete track: ${(error as Error).message}`);
+      }
+    }
 }
 
-export default new DawService();
+// Export the class directly (not as default)
+export { DawService, Project, Recording };
+
+// Also export as default for backward compatibility
+export default DawService;

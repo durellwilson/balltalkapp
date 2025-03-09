@@ -1,0 +1,248 @@
+name: BallTalk CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'preview'
+        type: choice
+        options:
+          - preview
+          - production
+
+jobs:
+  lint-and-test:
+    name: Lint and Test
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Run linter
+        run: npm run lint
+      
+      - name: Run unit tests
+        run: npm run test:unit
+        env:
+          EXPO_PUBLIC_USE_MOCK_DOLBY: true
+          EXPO_PUBLIC_USE_FIREBASE_EMULATOR: true
+      
+      - name: Upload test coverage
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          directory: ./coverage
+          fail_ci_if_error: false
+  
+  build-web:
+    name: Build Web App
+    runs-on: ubuntu-latest
+    needs: lint-and-test
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Build web app
+        run: npm run build:web
+        env:
+          EXPO_PUBLIC_FIREBASE_API_KEY: ${{ secrets.FIREBASE_API_KEY }}
+          EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN: ${{ secrets.FIREBASE_AUTH_DOMAIN }}
+          EXPO_PUBLIC_FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+          EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET: ${{ secrets.FIREBASE_STORAGE_BUCKET }}
+          EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.FIREBASE_MESSAGING_SENDER_ID }}
+          EXPO_PUBLIC_FIREBASE_APP_ID: ${{ secrets.FIREBASE_APP_ID }}
+          EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID: ${{ secrets.FIREBASE_MEASUREMENT_ID }}
+          EXPO_PUBLIC_DOLBY_API_KEY: ${{ secrets.DOLBY_API_KEY }}
+          EXPO_PUBLIC_DOLBY_API_SECRET: ${{ secrets.DOLBY_API_SECRET }}
+      
+      - name: Upload web build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-build
+          path: dist
+          retention-days: 1
+  
+  deploy-web-preview:
+    name: Deploy Web Preview
+    runs-on: ubuntu-latest
+    needs: build-web
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/develop') || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'preview')
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Download web build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: web-build
+          path: dist
+      
+      - name: Deploy to Firebase Preview Channel
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: '${{ secrets.GITHUB_TOKEN }}'
+          firebaseServiceAccount: '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}'
+          channelId: 'preview-${{ github.run_id }}'
+          projectId: ${{ secrets.FIREBASE_PROJECT_ID }}
+          expires: 7d
+      
+      - name: Comment on PR with preview URL
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const { issue: { number: issue_number }, repo: { owner, repo } } = context;
+            const previewUrl = `https://preview-${{ github.run_id }}--${{ secrets.FIREBASE_PROJECT_ID }}.web.app`;
+            
+            github.rest.issues.createComment({
+              issue_number,
+              owner,
+              repo,
+              body: `🚀 Web Preview deployment is ready! Visit: [${previewUrl}](${previewUrl})`
+            });
+  
+  deploy-web-production:
+    name: Deploy Web Production
+    runs-on: ubuntu-latest
+    needs: build-web
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production')
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Download web build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: web-build
+          path: dist
+      
+      - name: Deploy to Firebase Production
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: '${{ secrets.GITHUB_TOKEN }}'
+          firebaseServiceAccount: '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}'
+          channelId: live
+          projectId: ${{ secrets.FIREBASE_PROJECT_ID }}
+  
+  deploy-expo-preview:
+    name: Deploy Expo Preview
+    runs-on: ubuntu-latest
+    needs: lint-and-test
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/develop') || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'preview')
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Install EAS CLI
+        run: npm install -g eas-cli
+      
+      - name: Login to Expo
+        run: echo ${{ secrets.EXPO_TOKEN }} | eas login
+      
+      - name: Create Expo update
+        run: eas update --auto --branch preview
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          EXPO_PUBLIC_FIREBASE_API_KEY: ${{ secrets.FIREBASE_API_KEY }}
+          EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN: ${{ secrets.FIREBASE_AUTH_DOMAIN }}
+          EXPO_PUBLIC_FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+          EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET: ${{ secrets.FIREBASE_STORAGE_BUCKET }}
+          EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.FIREBASE_MESSAGING_SENDER_ID }}
+          EXPO_PUBLIC_FIREBASE_APP_ID: ${{ secrets.FIREBASE_APP_ID }}
+          EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID: ${{ secrets.FIREBASE_MEASUREMENT_ID }}
+          EXPO_PUBLIC_DOLBY_API_KEY: ${{ secrets.DOLBY_API_KEY }}
+          EXPO_PUBLIC_DOLBY_API_SECRET: ${{ secrets.DOLBY_API_SECRET }}
+      
+      - name: Comment on PR with QR code
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const { issue: { number: issue_number }, repo: { owner, repo } } = context;
+            
+            github.rest.issues.createComment({
+              issue_number,
+              owner,
+              repo,
+              body: `## 📱 Expo Preview Ready!\n\nScan the QR code with Expo Go app to test this PR:\n\n![QR Code](https://qr.expo.dev/eas-update?projectId=${{ secrets.EXPO_PROJECT_ID }}&channel=preview&runtimeVersion=exposdk:52.0.0)`
+            });
+  
+  deploy-expo-production:
+    name: Deploy Expo Production
+    runs-on: ubuntu-latest
+    needs: lint-and-test
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production')
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Install EAS CLI
+        run: npm install -g eas-cli
+      
+      - name: Login to Expo
+        run: echo ${{ secrets.EXPO_TOKEN }} | eas login
+      
+      - name: Create Expo update
+        run: eas update --auto --branch production
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          EXPO_PUBLIC_FIREBASE_API_KEY: ${{ secrets.FIREBASE_API_KEY }}
+          EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN: ${{ secrets.FIREBASE_AUTH_DOMAIN }}
+          EXPO_PUBLIC_FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+          EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET: ${{ secrets.FIREBASE_STORAGE_BUCKET }}
+          EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.FIREBASE_MESSAGING_SENDER_ID }}
+          EXPO_PUBLIC_FIREBASE_APP_ID: ${{ secrets.FIREBASE_APP_ID }}
+          EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID: ${{ secrets.FIREBASE_MEASUREMENT_ID }}
+          EXPO_PUBLIC_DOLBY_API_KEY: ${{ secrets.DOLBY_API_KEY }}
+          EXPO_PUBLIC_DOLBY_API_SECRET: ${{ secrets.DOLBY_API_SECRET }} 

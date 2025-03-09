@@ -1,0 +1,64 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Allow authenticated users to read and write their own files
+    match /users/{userId}/{allPaths=**} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Allow authenticated users to read and write chat attachments
+    match /conversations/{conversationId}/{allPaths=**} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null;
+    }
+    
+    // Allow authenticated users to read and write audio files
+    match /audio/{userId}/{allPaths=**} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Group icons can be read by anyone but only written by athletes
+    match /group_icons/{allPaths=**} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null;
+    }
+    
+    // Public icons directory for app assets
+    match /icons/{allPaths=**} {
+      allow read: if request.auth != null;
+      allow write: if false; // Only allow writes through admin or deployment
+    }
+    
+    // Songs upload directory
+    match /songs/{userId}/{allPaths=**} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Tracks upload directory
+    match /tracks/{userId}/{allPaths=**} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Chat attachments path
+    match /chat_attachments/{conversationId}/{allPaths=**} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null;
+    }
+    
+    // Test files can be read and written by anyone during testing
+    match /test/{allPaths=**} {
+      allow read, write: if true;
+    }
+    
+    // Allow all other operations for authenticated users
+    match /{allPaths=**} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null;
+    }
+  }
+} 

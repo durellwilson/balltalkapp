@@ -1,7 +1,7 @@
 import { Platform } from 'react-native';
 import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
 import { getAuth, connectAuthEmulator, Auth } from 'firebase/auth';
-import { getFirestore, connectFirestoreEmulator, Firestore } from 'firebase/firestore';
+import { getFirestore, connectFirestoreEmulator, Firestore, enableIndexedDbPersistence } from 'firebase/firestore';
 import { getStorage, connectStorageEmulator, FirebaseStorage } from 'firebase/storage';
 
 // CRITICAL: Hardcoded Firebase configuration for when env vars fail
@@ -80,6 +80,19 @@ try {
     storage: storage ? '✓ Available' : '✗ Unavailable'
   });
   
+  // Enable offline persistence for Firestore
+  if (db && Platform.OS !== 'web') {
+    try {
+      enableIndexedDbPersistence(db).then(() => {
+        console.log('Firestore offline persistence enabled');
+      }).catch((err) => {
+        console.error('Error enabling Firestore offline persistence:', err);
+      });
+    } catch (err) {
+      console.error('Failed to enable Firestore offline persistence:', err);
+    }
+  }
+  
   // Connect to emulators if in development and explicitly enabled
   const useEmulators = process.env.EXPO_PUBLIC_USE_FIREBASE_EMULATOR === 'true';
   if (useEmulators) {
@@ -118,4 +131,4 @@ const currentUser = auth.currentUser;
 console.log('Current auth state:', currentUser ? `User signed in: ${currentUser.uid}` : 'No user signed in');
 
 // Export
-export { firebaseApp, auth, db as firebaseDb, storage }; 
+export { firebaseApp, auth, db, storage }; 

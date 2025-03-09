@@ -1,177 +1,145 @@
 # BallTalk App
 
-A collaborative music platform for athletes and their fans.
+BallTalk is a React Native application built with Expo that allows athletes to record, process, and share audio content with their fans. The app includes features for audio recording, processing, chat, and user authentication.
 
-## Development Status
+## Table of Contents
 
-### Completed Tasks
+- [Setup](#setup)
+  - [Prerequisites](#prerequisites)
+  - [Installation](#installation)
+  - [Environment Variables](#environment-variables)
+- [Development](#development)
+  - [Running the App](#running-the-app)
+  - [Project Structure](#project-structure)
+  - [Code Style](#code-style)
+- [Testing](#testing)
+  - [Running Tests](#running-tests)
+  - [Firebase Emulators](#firebase-emulators)
+- [Deployment](#deployment)
+  - [Web Deployment](#web-deployment)
+  - [Mobile Deployment](#mobile-deployment)
+- [Features](#features)
+  - [Authentication](#authentication)
+  - [Audio Processing](#audio-processing)
+  - [Chat](#chat)
+  - [Offline Support](#offline-support)
+- [Troubleshooting](#troubleshooting)
+- [Contributing](#contributing)
 
-- ✅ Fixed Jest setup to properly load test environment
-- ✅ Updated SongService to use Firebase v9 modular SDK
-- ✅ Updated TrackUploader component to use the updated SongService
-- ✅ Fixed Firebase mocking in tests
-- ✅ Added tests for EnhancedRecordingInterface and TrackUploader components
-- ✅ Implemented Dolby.io Media API integration for audio enhancement
-- ✅ Created UI components for audio enhancement and analysis
-- ✅ Added documentation for Dolby.io Media API integration
-- ✅ Implemented vocal isolation feature for separating vocals from instrumentals
-- ✅ Added batch processing for handling multiple audio files at once
-- ✅ Created comprehensive test scripts for audio processing features
-
-### Next Steps
-
-1. Add advanced audio visualization components
-2. Integrate vocal isolation with the recording workflow
-3. Optimize audio processing for mobile devices
-4. Add support for saving and sharing isolated tracks
-5. Implement notifications for batch job completion
-
-## Getting Started
+## Setup
 
 ### Prerequisites
 
-- Node.js (v18 or higher)
-- npm (v9 or higher)
-- Firebase account
-- Dolby.io account with Media API access
+- Node.js (v18 or later)
+- npm or yarn
+- Expo CLI (`npm install -g expo-cli`)
+- Firebase account and project
+- Dolby.io API credentials (for audio processing)
 
 ### Installation
 
-1. Clone the repository
-   ```
+1. Clone the repository:
+   ```bash
    git clone https://github.com/yourusername/balltalkapp.git
    cd balltalkapp
    ```
 
-2. Install dependencies
-   ```
-   npm install
-   ```
-
-3. Set up environment variables
-   ```
-   cp .env.example .env
-   ```
-   Edit the `.env` file with your Firebase and Dolby.io configuration.
-
-4. Start the development server
-   ```
-   npm start
-   ```
-
-## Testing
-
-Run the tests with:
-```
-npm test
-```
-
-Run the tests with coverage:
-```
-npm run test:coverage
-```
-
-Test the Dolby.io API integration:
-```
-npm run test:dolby
-```
-
-Test the vocal isolation feature:
-```
-npm run test:vocal-isolation
-```
-
-Test the batch processing feature:
-```
-npm run test:batch-processing
-```
-
-## Firebase Emulators
-
-To run the app with Firebase emulators:
-
-1. Install the Firebase CLI
-   ```
-   npm install -g firebase-tools
-   ```
-
-2. Start the emulators
-   ```
-   firebase emulators:start
-   ```
-
-3. In another terminal, start the app with emulator configuration
-   ```
-   EXPO_PUBLIC_USE_FIREBASE_EMULATOR=true npm start
-   ```
-
-## CI/CD Pipeline
-
-The app uses GitHub Actions for CI/CD. The pipeline:
-
-1. Runs TypeScript checks
-2. Runs tests
-3. Tests Dolby.io API integration
-4. Builds the app
-5. Deploys to Firebase
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## Quick Start
-
-The easiest way to get started is to run our setup script:
-
-```bash
-npm run setup
-```
-
-This will install dependencies and start the app in web mode.
-
-## Manual Setup
-
-If you prefer to set up manually:
-
-1. Install dependencies:
+2. Install dependencies:
    ```bash
    npm install
    ```
 
-2. Start the app:
-   - Web: `npm run web`
-   - iOS: `npm run ios`
-   - Android: `npm run android`
+3. Create a `.env` file in the root directory with your Firebase and Dolby.io credentials (see [Environment Variables](#environment-variables)).
 
-## Environment Variables
+### Environment Variables
 
 Create a `.env` file in the root directory with the following variables:
 
 ```
-EXPO_PUBLIC_FIREBASE_API_KEY=your_firebase_api_key
-EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN=your_firebase_auth_domain
-EXPO_PUBLIC_FIREBASE_PROJECT_ID=your_firebase_project_id
-EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET=your_firebase_storage_bucket
-EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=your_firebase_messaging_sender_id
-EXPO_PUBLIC_FIREBASE_APP_ID=your_firebase_app_id
-EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID=your_firebase_measurement_id
-EXPO_PUBLIC_FIREBASE_DATABASE_URL=your_firebase_database_url
-EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID=your_google_web_client_id
-EXPO_PUBLIC_DOLBY_API_KEY=your_dolby_api_key
-EXPO_PUBLIC_DOLBY_API_SECRET=your_dolby_api_secret
+# Firebase Configuration
+EXPO_PUBLIC_FIREBASE_API_KEY=your-api-key
+EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN=your-auth-domain
+EXPO_PUBLIC_FIREBASE_PROJECT_ID=your-project-id
+EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET=your-storage-bucket
+EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=your-messaging-sender-id
+EXPO_PUBLIC_FIREBASE_APP_ID=your-app-id
+EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID=your-measurement-id
+
+# Dolby.io API Configuration
+EXPO_PUBLIC_DOLBY_API_KEY=your-dolby-api-key
+EXPO_PUBLIC_DOLBY_API_SECRET=your-dolby-api-secret
+
+# Audio Processing Configuration
+EXPO_PUBLIC_USE_MOCK_DOLBY=false
+EXPO_PUBLIC_DEFAULT_TARGET_LOUDNESS=-14
+
+# Development Configuration
+EXPO_PUBLIC_USE_FIREBASE_EMULATOR=false
 ```
 
-## Demo Accounts
+## Development
 
-The app includes demo accounts for testing:
-- Athlete: `athlete@example.com` / `password123`
-- Fan: `fan@example.com` / `password123`
+### Running the App
+
+- **Web**: `npm run web`
+- **iOS**: `npm run ios`
+- **Android**: `npm run android`
+- **With Emulators**: `npm run start:emulators`
+
+### Project Structure
+
+The project follows a feature-based structure:
+
+- `app/`: Expo Router screens and navigation
+- `components/`: Reusable UI components
+- `contexts/`: React context providers
+- `hooks/`: Custom React hooks
+- `services/`: API and service integrations
+- `utils/`: Utility functions
+- `models/`: Data models and types
+- `assets/`: Static assets (images, fonts, etc.)
+
+### Code Style
+
+We use ESLint and TypeScript for code quality. Run the linter with:
+
+```bash
+npm run lint
+```
+
+## Testing
+
+### Running Tests
+
+- **Unit Tests**: `npm run test:unit`
+- **Chat Tests**: `npm run test:chat`
+- **Audio Tests**: `npm run test:audio`
+- **All Tests**: `npm test`
+
+### Firebase Emulators
+
+For local development and testing, you can use Firebase emulators:
+
+1. Start the emulators:
+   ```bash
+   npm run emulators:start
+   ```
+
+2. Seed the emulators with test data:
+   ```bash
+   npm run emulators:seed
+   ```
+
+3. Run the app with emulators:
+   ```bash
+   npm run start:emulators
+   ```
 
 ## Deployment
 
 ### Web Deployment
 
-To deploy the web version to Firebase Hosting:
+Deploy to Firebase Hosting:
 
 ```bash
 npm run deploy
@@ -179,150 +147,77 @@ npm run deploy
 
 ### Mobile Deployment
 
-To build for mobile platforms, you'll need to set up EAS Build:
+Deploy to Expo:
 
-1. Install EAS CLI:
-   ```bash
-   npm install -g eas-cli
-   ```
+- **Preview**: `npm run deploy:expo:preview`
+- **Production**: `npm run deploy:expo:production`
 
-2. Log in to your Expo account:
-   ```bash
-   eas login
-   ```
+Build standalone apps:
 
-3. Configure the build:
-   ```bash
-   eas build:configure
-   ```
+```bash
+eas build --platform ios
+eas build --platform android
+```
 
-4. Build for iOS:
-   ```bash
-   eas build --platform ios
-   ```
+## Features
 
-5. Build for Android:
-   ```bash
-   eas build --platform android
-   ```
+### Authentication
 
-## Project Structure
+The app supports multiple authentication methods:
 
-- `app/` - Expo Router app directory
-  - `(auth)/` - Authentication screens
-  - `(tabs)/` - Main app tabs
-- `components/` - Reusable components
-  - `audio/` - Audio-related components
-- `contexts/` - React contexts
-- `services/` - Service classes
-  - `audio/` - Audio processing services
-- `src/lib/` - Library code
-- `assets/` - Static assets
-- `docs/` - Documentation
+- Email/password
+- Google Sign-In
+- Apple Sign-In
 
-## Audio Processing
+Authentication is managed through Firebase Authentication and integrated with Firestore for user data.
 
-The app includes advanced audio processing features powered by the Dolby.io Media API:
+### Audio Processing
 
-1. **Audio Enhancement**: Reduce noise and improve audio clarity
-2. **Audio Mastering**: Apply professional mastering profiles to audio
-3. **Audio Analysis**: Analyze audio metrics like loudness, dynamics, and spectral balance
-4. **Vocal Isolation**: Separate vocals from instrumentals in audio files
-5. **Batch Processing**: Process multiple audio files at once
+Athletes can record, process, and share audio content:
 
-For more information, see the following documentation:
-- [Audio Processing Features](./docs/AUDIO_PROCESSING.md)
-- [Dolby.io Media API Integration Guide](./DOLBY_API_GUIDE.md)
+1. **Recording**: Record audio directly in the app
+2. **Processing**: Apply audio enhancements using Dolby.io APIs
+3. **Sharing**: Share processed audio with fans
 
-## User Guide: Collaboration Features
+### Chat
 
-### Recording Tracks
+The app includes a real-time chat feature:
 
-1. **Access Recording Interface**
-   - Navigate to the Studio section using the bottom navigation
-   - Tap on "Record" to open the recording interface
+- Direct messaging between athletes and fans
+- Media sharing (images, audio)
+- Premium chat options for verified athletes
 
-2. **Record Audio**
-   - Grant microphone permissions when prompted
-   - Tap the red record button to start recording
-   - The waveform visualization will show your audio levels
-   - Tap stop when finished
+### Offline Support
 
-3. **Audio Processing**
-   - After recording, you can adjust audio settings:
-     - Mid Gain: Controls the mid-range frequencies
-     - High Gain: Controls the high-range frequencies
-     - Presence: Adds clarity to the vocals
-   - Tap "Process Vocal" to apply these effects
+The app supports offline functionality:
 
-4. **Save and Share**
-   - Your processed recording will be saved to your library
-   - From there, you can share it with collaborators
-
-### Uploading Tracks
-
-1. **Upload Audio Files**
-   - In the Studio section, tap "Upload"
-   - Select an audio file from your device (supported formats: MP3, M4A, WAV, OGG, AAC, FLAC)
-   - Add metadata like title and genre
-   - Tap "Upload" to save to your library
-
-### Collaboration Workflow
-
-1. **Sharing Tracks**
-   - Open a track from your library
-   - Tap the "Share" button
-   - Enter the email of your collaborator
-   - Set permissions (Listen, Download, Edit, or Remix)
-   - Add an optional message
-   - Tap "Share Track"
-
-2. **Receiving Shared Tracks**
-   - When someone shares a track with you, you'll receive a notification
-   - Go to the "Shared Tracks" section
-   - Accept or decline the shared track
-   - Accepted tracks appear in your library with the permissions set by the owner
-
-3. **Collaborating on Tracks**
-   - Open a shared track with Edit permissions
-   - Tap "Collaborate" to add your own recording or upload to this track
-   - Record over the existing track or upload a new track to mix with the original
-   - Save your collaborative version
-
-4. **Real-time Collaboration**
-   - Open a project and tap "Collaborate Now"
-   - Share the generated code with your collaborator
-   - Both users can see changes and chat in real-time
-   - All changes are saved to the project
+- Offline data persistence with Firestore
+- Queued uploads when offline
+- Automatic sync when back online
 
 ## Troubleshooting
 
-If you encounter issues:
+### Common Issues
 
-1. **Recording Problems**
-   - Ensure microphone permissions are granted
-   - Close other audio apps that might be using the microphone
-   - Restart the app if recording fails
+- **Firebase Authentication Issues**: Ensure your Firebase project has the appropriate authentication methods enabled.
+- **Build Errors**: Make sure you have the latest dependencies with `npm install`.
+- **Expo Errors**: Clear the Expo cache with `npm run clear-cache`.
 
-2. **Upload Issues**
-   - Check your internet connection
-   - Ensure file is under 50MB and in a supported format
-   - Try uploading a smaller file if problems persist
+### Error Handling
 
-3. **Sharing Problems**
-   - Verify the email address is correct
-   - Check that the recipient has an account
-   - Try again with a different file if the issue persists
+The app includes comprehensive error handling:
 
-## Contact Support
-
-If you continue to experience issues, contact support at support@balltalkapp.com or report bugs through the app's feedback feature.
+- Error boundaries for React components
+- Network error detection and recovery
+- Detailed error logging
 
 ## Contributing
 
-1. Create a feature branch
-2. Make your changes
-3. Submit a pull request
+1. Fork the repository
+2. Create a feature branch: `git checkout -b feature/your-feature-name`
+3. Commit your changes: `git commit -m 'Add some feature'`
+4. Push to the branch: `git push origin feature/your-feature-name`
+5. Submit a pull request
 
 ## License
 
@@ -353,3 +248,46 @@ To set up these secrets:
 2. Navigate to Settings > Secrets and variables > Actions
 3. Click on "New repository secret"
 4. Add each secret with its corresponding value
+
+## Navigation Setup and Troubleshooting
+
+### Tab Navigation
+
+The app uses Expo Router's file-based routing system with a tab-based navigation structure. The tab configuration is defined in `app/(tabs)/_layout.tsx`.
+
+#### Common Issues and Fixes
+
+1. **"Cannot use `href` and `tabBarButton` together" Error**:
+   
+   This error occurs when you try to use both `href` and `tabBarButton` properties on the same tab. To resolve this issue, completely remove the `href` property:
+   
+   ```tsx
+   // Incorrect - causes error:
+   <Tabs.Screen
+     name="discover"
+     options={{
+       href: null,
+       tabBarButton: () => null
+     }}
+   />
+   
+   // Correct solution:
+   <Tabs.Screen
+     name="discover"
+     options={{
+       tabBarButton: () => null
+     }}
+   />
+   ```
+   
+   In Expo Router, `href` and `tabBarButton` are mutually exclusive properties and cannot be used together.
+   
+   See `docs/NAVIGATION_FIXES.md` for more details and alternative approaches.
+
+2. **Running Navigation Tests**:
+   
+   We've added tests to ensure the navigation components render correctly. You can run them with:
+   
+   ```bash
+   node scripts/test-navigation.js
+   ```

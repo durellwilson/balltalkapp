@@ -1,368 +1,326 @@
-import React, { useEffect, useState, useRef } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
+import React, { useState, useEffect, useRef } from 'react';
+import { 
+  View, 
+  Text, 
+  StyleSheet, 
+  FlatList, 
+  TouchableOpacity, 
   TextInput,
-  FlatList,
+  ActivityIndicator,
+  SafeAreaView,
   KeyboardAvoidingView,
   Platform,
-  Image
+  Keyboard
 } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../contexts/auth';
+import ChatService, { Message, Conversation, TypingStatus } from '../../services/ChatService';
+import { formatDistanceToNow } from 'date-fns';
+import ErrorFallback from '../../components/fallbacks/ErrorFallback';
+import { useOffline } from '../../contexts/OfflineContext';
 
-// Mock data for athletes (same as in community.tsx)
-const MOCK_ATHLETES = [
-  {
-    id: '1',
-    name: 'Michael Jordan',
-    username: '@airjordan',
-    sport: 'Basketball',
-    team: 'Chicago Bulls (Retired)',
-    avatar: null
-  },
-  {
-    id: '2',
-    name: 'Serena Williams',
-    username: '@serenawilliams',
-    sport: 'Tennis',
-    team: 'WTA',
-    avatar: null
-  },
-  {
-    id: '3',
-    name: 'LeBron James',
-    username: '@kingjames',
-    sport: 'Basketball',
-    team: 'Los Angeles Lakers',
-    avatar: null
-  },
-  {
-    id: '4',
-    name: 'Megan Rapinoe',
-    username: '@mrapinoe',
-    sport: 'Soccer',
-    team: 'OL Reign',
-    avatar: null
-  },
-  {
-    id: '5',
-    name: 'Tom Brady',
-    username: '@tombrady',
-    sport: 'Football',
-    team: 'Tampa Bay Buccaneers (Retired)',
-    avatar: null
-  }
-];
-
-// Mock data for groups
-const MOCK_GROUPS = [
-  {
-    id: '1',
-    name: 'NBA Musicians',
-    description: 'Basketball players who make music',
-    members: 28,
-    isPrivate: false
-  },
-  {
-    id: '2',
-    name: 'Football Beats',
-    description: 'Football players sharing their tracks',
-    members: 42,
-    isPrivate: false
-  },
-  {
-    id: '3',
-    name: 'Tennis Rhythms',
-    description: 'Tennis players with a passion for music',
-    members: 15,
-    isPrivate: true
-  },
-  {
-    id: '4',
-    name: 'Soccer Sounds',
-    description: 'Soccer players creating music together',
-    members: 36,
-    isPrivate: false
-  }
-];
-
-// Mock initial messages
-const generateInitialMessages = (recipientId: string) => {
-  // Check if it's a group chat
-  const isGroup = MOCK_GROUPS.some(group => group.id === recipientId);
-  
-  if (isGroup) {
-    const group = MOCK_GROUPS.find(g => g.id === recipientId);
-    if (!group) return [];
-    
-    return [
-      {
-        id: '1',
-        senderId: 'system',
-        text: `Welcome to the ${group.name} group chat!`,
-        timestamp: new Date(Date.now() - 86400000 * 2).toISOString(), // 2 days ago
-        isSystemMessage: true
-      },
-      {
-        id: '2',
-        senderId: '3', // LeBron
-        text: `Hey everyone! Just dropped a new track, check it out!`,
-        timestamp: new Date(Date.now() - 86400000).toISOString(), // 1 day ago
-        isSystemMessage: false
-      },
-      {
-        id: '3',
-        senderId: '1', // Michael Jordan
-        text: `Nice beat LeBron! I'm working on something too.`,
-        timestamp: new Date(Date.now() - 43200000).toISOString(), // 12 hours ago
-        isSystemMessage: false
-      }
-    ];
-  } else {
-    // Direct message
-    const athlete = MOCK_ATHLETES.find(a => a.id === recipientId);
-    if (!athlete) return [];
-    
-    return [
-      {
-        id: '1',
-        senderId: recipientId,
-        text: `Hey there! Thanks for connecting.`,
-        timestamp: new Date(Date.now() - 3600000).toISOString(), // 1 hour ago
-        isSystemMessage: false
-      }
-    ];
-  }
-};
-
-const ChatScreen = () => {
-  const { id } = useLocalSearchParams();
+export default function ConversationScreen() {
+  const { id } = useLocalSearchParams<{ id: string }>();
   const { user } = useAuth();
-  const [recipient, setRecipient] = useState<any>(null);
-  const [messages, setMessages] = useState<any[]>([]);
-  const [newMessage, setNewMessage] = useState('');
-  const [isGroup, setIsGroup] = useState(false);
+  const { isOffline } = useOffline();
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [conversation, setConversation] = useState<Conversation | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
+  const [messageText, setMessageText] = useState('');
+  const [sending, setSending] = useState(false);
+  const [typingUsers, setTypingUsers] = useState<TypingStatus[]>([]);
   const flatListRef = useRef<FlatList>(null);
+  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Load recipient data and messages
   useEffect(() => {
-    // Check if it's a group chat
-    const group = MOCK_GROUPS.find(g => g.id === id);
-    if (group) {
-      setRecipient(group);
-      setIsGroup(true);
-    } else {
-      // It's a direct message
-      const athlete = MOCK_ATHLETES.find(a => a.id === id);
-      if (athlete) {
-        setRecipient(athlete);
-        setIsGroup(false);
+    if (!user || !id) return;
+
+    // Mark messages as read when opening the conversation
+    ChatService.markMessagesAsRead(id, user.uid).catch(err => {
+      console.error('Error marking messages as read:', err);
+    });
+
+    // Subscribe to messages
+    const messagesUnsubscribe = ChatService.getMessages(id, 50, (data) => {
+      setMessages(data.sort((a, b) => {
+        return b.timestamp.toMillis() - a.timestamp.toMillis();
+      }));
+      setLoading(false);
+    });
+
+    // Subscribe to typing status
+    const typingUnsubscribe = ChatService.getTypingStatus(id, (typingData) => {
+      // Filter out the current user
+      setTypingUsers(typingData.filter(status => status.userId !== user.uid));
+    });
+
+    return () => {
+      messagesUnsubscribe();
+      typingUnsubscribe();
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
       }
-    }
-
-    // Load initial messages
-    setMessages(generateInitialMessages(id as string));
-  }, [id]);
-
-  // Send a message
-  const sendMessage = () => {
-    if (newMessage.trim() === '') return;
-
-    const newMsg = {
-      id: Date.now().toString(),
-      senderId: 'currentUser', // In a real app, this would be the current user's ID
-      text: newMessage.trim(),
-      timestamp: new Date().toISOString(),
-      isSystemMessage: false
     };
+  }, [user, id]);
 
-    setMessages([...messages, newMsg]);
-    setNewMessage('');
+  // Get conversation details
+  useEffect(() => {
+    if (!user || !id) return;
 
-    // Scroll to bottom
-    setTimeout(() => {
-      flatListRef.current?.scrollToEnd({ animated: true });
-    }, 100);
-  };
+    const unsubscribe = ChatService.getConversations(user.uid, (conversations) => {
+      const currentConversation = conversations.find(conv => conv.id === id);
+      if (currentConversation) {
+        setConversation(currentConversation);
+      }
+    });
 
-  // Format timestamp
-  const formatTimestamp = (timestamp: string) => {
-    const date = new Date(timestamp);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-    
-    if (diffDays === 0) {
-      // Today, show time
-      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    } else if (diffDays === 1) {
-      // Yesterday
-      return 'Yesterday';
-    } else if (diffDays < 7) {
-      // Within a week
-      const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-      return days[date.getDay()];
-    } else {
-      // Older
-      return date.toLocaleDateString();
+    return () => {
+      unsubscribe();
+    };
+  }, [user, id]);
+
+  const handleSendMessage = async () => {
+    if (!user || !id || !messageText.trim() || sending) return;
+
+    try {
+      setSending(true);
+      await ChatService.sendMessage({
+        conversationId: id,
+        senderId: user.uid,
+        text: messageText.trim()
+      });
+      setMessageText('');
+      // Scroll to bottom after sending
+      setTimeout(() => {
+        flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
+      }, 100);
+    } catch (err) {
+      console.error('Error sending message:', err);
+      setError(err as Error);
+    } finally {
+      setSending(false);
     }
   };
 
-  // Get sender name
-  const getSenderName = (senderId: string) => {
-    if (senderId === 'currentUser') return 'You';
-    if (senderId === 'system') return 'System';
-    
-    const athlete = MOCK_ATHLETES.find(a => a.id === senderId);
-    return athlete ? athlete.name : 'Unknown User';
+  const handleBackPress = () => {
+    router.back();
   };
 
-  // Get avatar for sender
-  const getSenderAvatar = (senderId: string) => {
-    if (senderId === 'currentUser' || senderId === 'system') return null;
+  const handleAddReaction = (messageId: string, emoji: string) => {
+    if (!user || !id) return;
     
-    const athlete = MOCK_ATHLETES.find(a => a.id === senderId);
-    return athlete ? athlete.avatar : null;
+    ChatService.addReaction(messageId, user.uid, emoji).catch(err => {
+      console.error('Error adding reaction:', err);
+    });
   };
 
-  // Render message item
-  const renderMessageItem = ({ item }: { item: any }) => {
-    const isCurrentUser = item.senderId === 'currentUser';
-    const isSystem = item.isSystemMessage;
+  const handleRemoveReaction = (messageId: string, emoji: string) => {
+    if (!user || !id) return;
     
-    if (isSystem) {
-      return (
-        <View style={styles.systemMessageContainer}>
-          <Text style={styles.systemMessageText}>{item.text}</Text>
-          <Text style={styles.timestamp}>{formatTimestamp(item.timestamp)}</Text>
-        </View>
-      );
+    ChatService.removeReaction(messageId, user.uid, emoji).catch(err => {
+      console.error('Error removing reaction:', err);
+    });
+  };
+
+  const handleTextChange = (text: string) => {
+    setMessageText(text);
+    
+    // Update typing status
+    if (!user || !id) return;
+    
+    // Clear previous timeout
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
     }
     
-    return (
-      <View style={[
-        styles.messageContainer,
-        isCurrentUser ? styles.currentUserMessage : styles.otherUserMessage
-      ]}>
-        {!isCurrentUser && isGroup && (
-          <View style={styles.messageSenderInfo}>
-            {/* Always use the placeholder since we don't have real avatars in our mock data */}
-            <View style={styles.senderAvatarPlaceholder}>
-              <Text style={styles.senderAvatarInitial}>
-                {getSenderName(item.senderId).charAt(0)}
-              </Text>
-            </View>
-          </View>
-        )}
-        
-        <View style={[
-          styles.messageBubble,
-          isCurrentUser ? styles.currentUserBubble : styles.otherUserBubble
-        ]}>
-          {!isCurrentUser && isGroup && (
-            <Text style={styles.messageSenderName}>{getSenderName(item.senderId)}</Text>
-          )}
-          <Text style={[
-            styles.messageText,
-            isCurrentUser ? styles.currentUserText : styles.otherUserText
-          ]}>
-            {item.text}
-          </Text>
-          <Text style={[
-            styles.messageTimestamp,
-            isCurrentUser ? styles.currentUserTimestamp : styles.otherUserTimestamp
-          ]}>
-            {formatTimestamp(item.timestamp)}
-          </Text>
-        </View>
-      </View>
-    );
+    // Update typing status
+    ChatService.updateTypingStatus(id, user.uid, user.displayName || 'User').catch(err => {
+      console.error('Error updating typing status:', err);
+    });
+    
+    // Set timeout to clear typing status
+    typingTimeoutRef.current = setTimeout(() => {
+      // This will be cleared automatically after 5 seconds on the server
+    }, 4000);
   };
 
-  if (!recipient) {
+  if (error) {
     return (
-      <View style={styles.container}>
-        <Text style={styles.title}>Chat not found</Text>
-      </View>
+      <ErrorFallback 
+        message="Could not load conversation" 
+        onRetry={() => setError(null)} 
+      />
     );
   }
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
-    >
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity 
-          style={styles.backButton}
-          onPress={() => router.back()}
-        >
-          <Ionicons name="arrow-back" size={24} color="#007AFF" />
-        </TouchableOpacity>
-        
-        <View style={styles.headerInfo}>
-          {isGroup ? (
-            <>
-              <Text style={styles.headerTitle}>{recipient.name}</Text>
-              <Text style={styles.headerSubtitle}>{recipient.members} members</Text>
-            </>
-          ) : (
-            <>
-              <Text style={styles.headerTitle}>{recipient.name}</Text>
-              <Text style={styles.headerSubtitle}>{recipient.username}</Text>
-            </>
-          )}
+    <SafeAreaView style={styles.container}>
+      <KeyboardAvoidingView 
+        style={styles.keyboardAvoidingView}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+      >
+        <View style={styles.header}>
+          <TouchableOpacity 
+            style={styles.backButton}
+            onPress={handleBackPress}
+          >
+            <Ionicons name="chevron-back" size={24} color="#007AFF" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>
+            {conversation?.isGroup 
+              ? conversation.groupName 
+              : 'Direct Message'}
+          </Text>
+          <View style={styles.headerRight}>
+            {conversation?.isPremium && (
+              <Ionicons name="star" size={18} color="#FFD700" style={styles.premiumIcon} />
+            )}
+          </View>
         </View>
-        
-        <TouchableOpacity style={styles.headerButton}>
-          <Ionicons name="information-circle-outline" size={24} color="#007AFF" />
-        </TouchableOpacity>
-      </View>
 
-      {/* Messages */}
-      <FlatList
-        ref={flatListRef}
-        data={messages}
-        renderItem={renderMessageItem}
-        keyExtractor={item => item.id}
-        contentContainerStyle={styles.messagesContainer}
-        onLayout={() => flatListRef.current?.scrollToEnd({ animated: false })}
-      />
+        {isOffline && (
+          <View style={styles.offlineNotice}>
+            <Ionicons name="cloud-offline" size={16} color="white" />
+            <Text style={styles.offlineText}>You're offline. Messages will be sent when you're back online.</Text>
+          </View>
+        )}
 
-      {/* Message Input */}
-      <View style={styles.inputContainer}>
-        <TextInput
-          style={styles.input}
-          placeholder="Type a message..."
-          value={newMessage}
-          onChangeText={setNewMessage}
-          multiline
-        />
-        <TouchableOpacity 
-          style={[
-            styles.sendButton,
-            newMessage.trim() === '' ? styles.sendButtonDisabled : {}
-          ]}
-          onPress={sendMessage}
-          disabled={newMessage.trim() === ''}
-        >
-          <Ionicons name="send" size={20} color="white" />
-        </TouchableOpacity>
-      </View>
-    </KeyboardAvoidingView>
+        {loading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color="#007AFF" />
+            <Text style={styles.loadingText}>Loading messages...</Text>
+          </View>
+        ) : (
+          <>
+            <FlatList
+              ref={flatListRef}
+              data={messages}
+              keyExtractor={(item) => item.id || ''}
+              inverted
+              contentContainerStyle={styles.messagesList}
+              renderItem={({ item }) => {
+                const isMyMessage = item.senderId === user?.uid;
+                const messageTime = item.timestamp 
+                  ? formatDistanceToNow(item.timestamp.toDate(), { addSuffix: true })
+                  : '';
+                
+                return (
+                  <View style={[
+                    styles.messageContainer,
+                    isMyMessage ? styles.myMessageContainer : styles.otherMessageContainer
+                  ]}>
+                    <View style={[
+                      styles.messageBubble,
+                      isMyMessage ? styles.myMessageBubble : styles.otherMessageBubble
+                    ]}>
+                      <Text style={styles.messageText}>{item.text}</Text>
+                      <Text style={styles.messageTime}>{messageTime}</Text>
+                    </View>
+                    
+                    {/* Reactions */}
+                    {item.reactions && item.reactions.length > 0 && (
+                      <View style={styles.reactionsContainer}>
+                        {/* Group reactions by emoji */}
+                        {Object.entries(
+                          item.reactions.reduce((acc, reaction) => {
+                            acc[reaction.emoji] = (acc[reaction.emoji] || 0) + 1;
+                            return acc;
+                          }, {} as Record<string, number>)
+                        ).map(([emoji, count]) => (
+                          <TouchableOpacity 
+                            key={emoji}
+                            style={styles.reactionBubble}
+                            onPress={() => {
+                              // Toggle reaction
+                              const hasReacted = item.reactions?.some(
+                                r => r.userId === user?.uid && r.emoji === emoji
+                              );
+                              
+                              if (hasReacted) {
+                                handleRemoveReaction(item.id || '', emoji);
+                              } else {
+                                handleAddReaction(item.id || '', emoji);
+                              }
+                            }}
+                          >
+                            <Text style={styles.reactionEmoji}>{emoji}</Text>
+                            {count > 1 && (
+                              <Text style={styles.reactionCount}>{count}</Text>
+                            )}
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    )}
+                    
+                    {/* Read receipts */}
+                    {isMyMessage && item.readBy && item.readBy.length > 1 && (
+                      <View style={styles.readReceiptContainer}>
+                        <Ionicons name="checkmark-done" size={14} color="#007AFF" />
+                        <Text style={styles.readReceiptText}>
+                          Read by {item.readBy.length - 1}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                );
+              }}
+            />
+            
+            {/* Typing indicator */}
+            {typingUsers.length > 0 && (
+              <View style={styles.typingContainer}>
+                <View style={styles.typingBubble}>
+                  <Text style={styles.typingText}>
+                    {typingUsers.length === 1
+                      ? `${typingUsers[0].displayName} is typing...`
+                      : `${typingUsers.length} people are typing...`}
+                  </Text>
+                </View>
+              </View>
+            )}
+            
+            {/* Message input */}
+            <View style={styles.inputContainer}>
+              <TextInput
+                style={styles.input}
+                placeholder="Type a message..."
+                value={messageText}
+                onChangeText={handleTextChange}
+                multiline
+                maxLength={1000}
+              />
+              <TouchableOpacity 
+                style={[
+                  styles.sendButton,
+                  (!messageText.trim() || sending) && styles.sendButtonDisabled
+                ]}
+                onPress={handleSendMessage}
+                disabled={!messageText.trim() || sending}
+              >
+                {sending ? (
+                  <ActivityIndicator size="small" color="white" />
+                ) : (
+                  <Ionicons name="send" size={20} color="white" />
+                )}
+              </TouchableOpacity>
+            </View>
+          </>
+        )}
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
-};
+}
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f8f8f8'
+  },
+  keyboardAvoidingView: {
+    flex: 1
   },
   header: {
     flexDirection: 'row',
@@ -370,128 +328,141 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 12,
+    backgroundColor: 'white',
     borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
-    backgroundColor: 'white'
+    borderBottomColor: '#e0e0e0'
   },
   backButton: {
     padding: 8
   },
-  headerInfo: {
-    flex: 1,
-    alignItems: 'center'
-  },
   headerTitle: {
     fontSize: 18,
-    fontWeight: 'bold'
+    fontWeight: 'bold',
+    flex: 1,
+    textAlign: 'center'
   },
-  headerSubtitle: {
-    fontSize: 14,
-    color: '#666'
-  },
-  headerButton: {
-    padding: 8
-  },
-  messagesContainer: {
-    padding: 16,
-    paddingBottom: 8
-  },
-  messageContainer: {
-    marginBottom: 16,
-    flexDirection: 'row',
+  headerRight: {
+    width: 40,
     alignItems: 'flex-end'
   },
-  currentUserMessage: {
-    justifyContent: 'flex-end'
+  premiumIcon: {
+    marginRight: 4
   },
-  otherUserMessage: {
-    justifyContent: 'flex-start'
+  offlineNotice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FF3B30',
+    padding: 8,
+    marginBottom: 8
   },
-  messageSenderInfo: {
-    marginRight: 8,
-    alignItems: 'center'
+  offlineText: {
+    color: 'white',
+    marginLeft: 8,
+    fontSize: 14
   },
-  senderAvatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16
-  },
-  senderAvatarPlaceholder: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#007AFF',
+  loadingContainer: {
+    flex: 1,
     justifyContent: 'center',
     alignItems: 'center'
   },
-  senderAvatarInitial: {
-    color: 'white',
+  loadingText: {
+    marginTop: 12,
     fontSize: 16,
-    fontWeight: 'bold'
+    color: '#666'
+  },
+  messagesList: {
+    paddingHorizontal: 16,
+    paddingVertical: 8
+  },
+  messageContainer: {
+    marginVertical: 4,
+    maxWidth: '80%'
+  },
+  myMessageContainer: {
+    alignSelf: 'flex-end'
+  },
+  otherMessageContainer: {
+    alignSelf: 'flex-start'
   },
   messageBubble: {
-    maxWidth: '75%',
-    padding: 12,
-    borderRadius: 16
+    borderRadius: 18,
+    paddingHorizontal: 12,
+    paddingVertical: 8
   },
-  currentUserBubble: {
+  myMessageBubble: {
     backgroundColor: '#007AFF',
-    borderBottomRightRadius: 4
   },
-  otherUserBubble: {
-    backgroundColor: 'white',
-    borderBottomLeftRadius: 4,
-    borderWidth: 1,
-    borderColor: '#e0e0e0'
-  },
-  messageSenderName: {
-    fontSize: 12,
-    fontWeight: 'bold',
-    marginBottom: 4,
-    color: '#333'
+  otherMessageBubble: {
+    backgroundColor: '#E5E5EA',
   },
   messageText: {
     fontSize: 16,
-    lineHeight: 22
-  },
-  currentUserText: {
     color: 'white'
   },
-  otherUserText: {
-    color: '#333'
-  },
-  messageTimestamp: {
+  messageTime: {
     fontSize: 12,
+    color: 'rgba(255, 255, 255, 0.7)',
     marginTop: 4,
     alignSelf: 'flex-end'
   },
-  currentUserTimestamp: {
-    color: 'rgba(255, 255, 255, 0.7)'
+  reactionsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginTop: 4
   },
-  otherUserTimestamp: {
-    color: '#999'
-  },
-  systemMessageContainer: {
+  reactionBubble: {
+    flexDirection: 'row',
     alignItems: 'center',
-    marginVertical: 16
+    backgroundColor: 'rgba(0, 0, 0, 0.1)',
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    marginRight: 4,
+    marginBottom: 4
   },
-  systemMessageText: {
+  reactionEmoji: {
+    fontSize: 14
+  },
+  reactionCount: {
+    fontSize: 12,
+    marginLeft: 4,
+    color: '#666'
+  },
+  readReceiptContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
+    alignSelf: 'flex-end'
+  },
+  readReceiptText: {
+    fontSize: 12,
+    color: '#666',
+    marginLeft: 4
+  },
+  typingContainer: {
+    paddingHorizontal: 16,
+    paddingVertical: 4
+  },
+  typingBubble: {
+    backgroundColor: '#E5E5EA',
+    borderRadius: 18,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    alignSelf: 'flex-start'
+  },
+  typingText: {
     fontSize: 14,
     color: '#666',
-    textAlign: 'center'
-  },
-  timestamp: {
-    fontSize: 12,
-    color: '#999',
-    marginTop: 4
+    fontStyle: 'italic'
   },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: 'white',
     borderTopWidth: 1,
-    borderTopColor: '#e0e0e0',
-    backgroundColor: 'white'
+    borderTopColor: '#e0e0e0'
   },
   input: {
     flex: 1,
@@ -504,22 +475,14 @@ const styles = StyleSheet.create({
   },
   sendButton: {
     backgroundColor: '#007AFF',
+    borderRadius: 20,
     width: 40,
     height: 40,
-    borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
     marginLeft: 8
   },
   sendButtonDisabled: {
-    backgroundColor: '#b0b0b0'
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    marginBottom: 16,
-    padding: 16
+    backgroundColor: '#B0B0B0'
   }
 });
-
-export default ChatScreen;

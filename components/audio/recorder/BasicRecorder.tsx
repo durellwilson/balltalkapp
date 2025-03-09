@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Button, Text, StyleSheet, Platform } from 'react-native';
-import { Audio } from 'expo-av';
+import { Audio, InterruptionModeIOS, InterruptionModeAndroid } from 'expo-av';
 
 export default function BasicRecorder() {
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
@@ -25,13 +25,11 @@ export default function BasicRecorder() {
         await Audio.setAudioModeAsync({
           allowsRecordingIOS: true,
           playsInSilentModeIOS: true,
-          staysActiveInBackground: false,
-          // These are needed for Android
+          staysActiveInBackground: true,
+          shouldDuckAndroid: true,
+          interruptionModeIOS: InterruptionModeIOS.DoNotMix,
+          interruptionModeAndroid: InterruptionModeAndroid.DoNotMix,
           playThroughEarpieceAndroid: false,
-          // These are needed for iOS
-          interruptionModeIOS: Audio.INTERRUPTION_MODE_IOS_DO_NOT_MIX,
-          // These are needed for Android
-          interruptionModeAndroid: Audio.INTERRUPTION_MODE_ANDROID_DO_NOT_MIX,
         });
         
         setStatus('Ready to record');

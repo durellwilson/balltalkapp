@@ -24,6 +24,7 @@ import {
 } from 'firebase/firestore';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import * as AppleAuthentication from 'expo-apple-authentication';
+import NetworkErrorHandler from './NetworkErrorHandler';
 
 // For React Native specific implementations, we'll use these conditionally
 // Only import when needed for platform-specific code
@@ -68,6 +69,7 @@ export interface AuthError {
   message: string;
   provider?: AuthProvider;
   details?: any;
+  retryable: boolean;
 }
 
 /**
@@ -127,6 +129,13 @@ export interface UserProfile {
  * AuthService class for handling authentication operations
  */
 class AuthService {
+  private static instance: AuthService;
+  private networkErrorHandler: NetworkErrorHandler;
+
+  constructor() {
+    this.networkErrorHandler = NetworkErrorHandler.getInstance();
+  }
+
   /**
    * Create a new athlete account with email and password
    */
@@ -168,11 +177,9 @@ class AuthService {
         console.log(`[AuthService] Signed in successfully with imported auth: ${user.uid}`);
       } catch (error: any) {
         console.error('[AuthService] Error with imported Firebase auth:', error);
-        console.error('[AuthService] Error code:', error.code);
-        console.error('[AuthService] Error message:', error.message);
         
-        // If that fails, try using the React Native Firebase auth
-        if (Platform.OS !== 'web') {
+        // If that fails and we're on native, try using the React Native Firebase auth
+        if (Platform.OS !== 'web' && auth_lib) {
           console.log('[AuthService] Trying React Native Firebase auth...');
           try {
             userCredential = await auth_lib().signInWithEmailAndPassword(email, password);
@@ -180,12 +187,25 @@ class AuthService {
             console.log(`[AuthService] Signed in successfully with React Native auth: ${user.uid}`);
           } catch (rnError: any) {
             console.error('[AuthService] React Native Firebase auth failed too:', rnError);
-            // Throw the original error
-            throw error;
+            const errorDetails = this.networkErrorHandler.categorizeError(rnError);
+            throw {
+              code: rnError.code || 'auth/unknown',
+              message: this.networkErrorHandler.formatErrorMessage(errorDetails),
+              provider: 'email',
+              details: rnError,
+              retryable: errorDetails.retryable
+            } as AuthError;
           }
         } else {
-          // Re-throw the original error if we can't use React Native Firebase
-          throw error;
+          // Re-throw the original error with better formatting
+          const errorDetails = this.networkErrorHandler.categorizeError(error);
+          throw {
+            code: error.code || 'auth/unknown',
+            message: this.networkErrorHandler.formatErrorMessage(errorDetails),
+            provider: 'email',
+            details: error,
+            retryable: errorDetails.retryable
+          } as AuthError;
         }
       }
       
@@ -246,26 +266,21 @@ class AuthService {
         console.error('[AuthService] Error getting Firestore data:', firestoreError);
         
         // Return basic user info if Firestore fails
-        const userData = {
+        return {
           uid: user.uid,
           email: user.email,
           displayName: user.displayName,
-          photoURL: user.photoURL
+          photoURL: user.photoURL,
+          role: 'fan',
+          isVerified: false
         } as FirebaseUser;
-        
-        console.log('[AuthService] Returning basic user data due to Firestore error:', userData);
-        return userData;
       }
     } catch (error: any) {
-      console.error('[AuthService] Sign in error:', error);
-      console.error('[AuthService] Error code:', error.code);
-      console.error('[AuthService] Error message:', error.message);
-      const authError: AuthError = {
-        code: error.code || 'auth/unknown',
-        message: error.message || 'An unknown error occurred',
-      };
-      console.error('[AuthService] Throwing auth error:', authError);
-      throw authError;
+      console.error('[AuthService] Final error in signInWithEmail:', error);
+      if (error.retryable) {
+        console.log('[AuthService] Error is retryable, will retry on next attempt');
+      }
+      throw error;
     }
   }
 
@@ -311,7 +326,8 @@ class AuthService {
       const authError: AuthError = {
         code: error.code || 'auth/unknown',
         message: error.message || 'An unknown error occurred',
-        provider: 'email'
+        provider: 'email',
+        retryable: false
       };
       throw authError;
     }
@@ -509,7 +525,8 @@ class AuthService {
         code: error.code || 'auth/google-sign-in-failed',
         message: error.message || 'Failed to sign in with Google',
         provider: 'google',
-        details: error
+        details: error,
+        retryable: false
       };
       throw authError;
     }
@@ -578,125 +595,178 @@ class AuthService {
   }
 
   /**
-   * Create demo accounts if they don't exist
+   * Create demo accounts for testing
    */
   async createDemoAccountsIfNeeded(): Promise<void> {
-    console.log('[AuthService] Checking if demo accounts exist...');
-    
-    const demoAccounts = [
-      { email: 'athlete@example.com', password: 'password123', role: 'athlete' as const, displayName: 'Demo Athlete', username: 'demoathlete' },
-      { email: 'fan@example.com', password: 'password123', role: 'fan' as const, displayName: 'Demo Fan', username: 'demofan' }
-    ];
-    
-    // Current user to restore session after
-    const currentUser = auth.currentUser;
-    
-    for (const account of demoAccounts) {
-      try {
-        console.log(`[AuthService] Checking if ${account.email} exists...`);
-        
-        // Check if user exists by email
-        const existingUser = await this.getUserByEmail(account.email);
-        
-        if (existingUser) {
-          console.log(`[AuthService] Demo account ${account.email} already exists with UID: ${existingUser.uid}`);
+    try {
+      console.log('[AuthService] Setting up demo accounts...');
+      
+      // Check if athlete account exists
+      const athleteEmail = 'athlete@example.com';
+      const athleteExists = await this.checkUserExists(athleteEmail);
+      
+      if (!athleteExists) {
+        console.log(`[AuthService] Creating demo athlete account: ${athleteEmail}`);
+        try {
+          // Create user with Firebase Auth
+          const userCredential = await createUserWithEmailAndPassword(auth, athleteEmail, 'password123');
+          const user = userCredential.user;
           
-          // Check if the user document exists
-          const userDocRef = doc(db, 'users', existingUser.uid);
-          const userDoc = await getDoc(userDocRef);
+          // Update profile
+          await updateProfile(user, {
+            displayName: 'Demo Athlete'
+          });
           
-          // Update or create user document if it doesn't exist
-          if (!userDoc.exists()) {
-            console.log(`[AuthService] Creating missing user document for ${account.email}...`);
-            await setDoc(userDocRef, {
-              email: account.email,
-              displayName: account.displayName,
-              role: account.role,
-              username: account.username,
-              createdAt: serverTimestamp(),
-              isVerified: account.role === 'athlete', // Athletes are verified by default
-              provider: 'email'
-            });
-          }
-        } else {
-          // Create the account if it doesn't exist
-          console.log(`[AuthService] Creating demo account for ${account.email}...`);
-          
-          try {
-            // Create the user account
-            const userCredential = await createUserWithEmailAndPassword(auth, account.email, account.password);
-            const user = userCredential.user;
-            
-            if (user) {
-              // Set display name
-              await updateProfile(user, {
-                displayName: account.displayName
-              });
-              
-              // Create user document in Firestore
-              await setDoc(doc(db, 'users', user.uid), {
-                email: account.email,
-                displayName: account.displayName,
-                role: account.role,
-                username: account.username,
-                createdAt: serverTimestamp(),
-                isVerified: account.role === 'athlete', // Athletes are verified by default
-                provider: 'email'
-              });
-              
-              console.log(`[AuthService] Demo account ${account.email} created successfully with UID: ${user.uid}`);
-              
-              // Sign out to be ready for the next account
-              await firebaseSignOut(auth);
+          // Create user document in Firestore
+          const userDocRef = doc(db, 'users', user.uid);
+          await setDoc(userDocRef, {
+            email: athleteEmail,
+            displayName: 'Demo Athlete',
+            role: 'athlete',
+            username: 'demoathlete',
+            isVerified: true,
+            createdAt: serverTimestamp(),
+            bio: 'Professional athlete for demo purposes',
+            location: 'Demo City, USA',
+            socialLinks: {
+              instagram: 'demo_athlete',
+              twitter: 'demo_athlete'
+            },
+            preferences: {
+              notifications: true,
+              privacy: 'public',
+              theme: 'system'
             }
-          } catch (createError: any) {
-            // Check for user already exists error
-            if (createError.code === 'auth/email-already-in-use') {
-              console.log(`[AuthService] Account ${account.email} already exists but couldn't be accessed directly`);
-              
-              // Try to sign in with email/password to get the user
-              try {
-                const userCredential = await signInWithEmailAndPassword(auth, account.email, account.password);
-                const user = userCredential.user;
-                
-                // Create/update Firestore document for this user
-                if (user) {
-                  await setDoc(doc(db, 'users', user.uid), {
-                    email: account.email,
-                    displayName: account.displayName,
-                    role: account.role,
-                    username: account.username,
-                    createdAt: serverTimestamp(),
-                    isVerified: account.role === 'athlete',
-                    provider: 'email'
-                  });
-                  
-                  console.log(`[AuthService] Updated existing demo account ${account.email}`);
-                  
-                  // Sign out
-                  await firebaseSignOut(auth);
-                }
-              } catch (signInError) {
-                console.error(`[AuthService] Error signing in to existing account ${account.email}:`, signInError);
-              }
-            } else {
-              console.error(`[AuthService] Error creating demo account ${account.email}:`, createError);
-            }
+          });
+          
+          console.log(`[AuthService] Demo athlete account created successfully: ${user.uid}`);
+          
+          // Sign out to prepare for next account creation
+          await firebaseSignOut(auth);
+        } catch (error: any) {
+          // If account already exists but wasn't found by checkUserExists
+          if (error.code === 'auth/email-already-in-use') {
+            console.log(`[AuthService] Demo athlete account already exists`);
+          } else {
+            console.error(`[AuthService] Error creating demo athlete account:`, error);
           }
         }
-      } catch (error: any) {
-        console.error(`[AuthService] Unexpected error with demo account ${account.email}:`, error);
+      } else {
+        console.log(`[AuthService] Demo athlete account already exists`);
       }
+      
+      // Check if fan account exists
+      const fanEmail = 'fan@example.com';
+      const fanExists = await this.checkUserExists(fanEmail);
+      
+      if (!fanExists) {
+        console.log(`[AuthService] Creating demo fan account: ${fanEmail}`);
+        try {
+          // Create user with Firebase Auth
+          const userCredential = await createUserWithEmailAndPassword(auth, fanEmail, 'password123');
+          const user = userCredential.user;
+          
+          // Update profile
+          await updateProfile(user, {
+            displayName: 'Demo Fan'
+          });
+          
+          // Create user document in Firestore
+          const userDocRef = doc(db, 'users', user.uid);
+          await setDoc(userDocRef, {
+            email: fanEmail,
+            displayName: 'Demo Fan',
+            role: 'fan',
+            username: 'demofan',
+            isVerified: true,
+            createdAt: serverTimestamp(),
+            bio: 'Sports enthusiast and fan',
+            location: 'Fan City, USA',
+            preferences: {
+              notifications: true,
+              privacy: 'public',
+              theme: 'system'
+            }
+          });
+          
+          console.log(`[AuthService] Demo fan account created successfully: ${user.uid}`);
+          
+          // Sign out to prepare for next operation
+          await firebaseSignOut(auth);
+        } catch (error: any) {
+          // If account already exists but wasn't found by checkUserExists
+          if (error.code === 'auth/email-already-in-use') {
+            console.log(`[AuthService] Demo fan account already exists`);
+          } else {
+            console.error(`[AuthService] Error creating demo fan account:`, error);
+          }
+        }
+      } else {
+        console.log(`[AuthService] Demo fan account already exists`);
+      }
+      
+      console.log('[AuthService] Demo accounts setup complete');
+    } catch (error) {
+      console.error('[AuthService] Error in createDemoAccountsIfNeeded:', error);
     }
-    
-    // Restore original user if there was one
-    if (currentUser) {
-      console.log(`[AuthService] Restoring original user session: ${currentUser.uid}`);
-    } else {
-      console.log(`[AuthService] No original user to restore`);
+  }
+
+  /**
+   * Check if a user with the given email exists
+   */
+  async checkUserExists(email: string): Promise<boolean> {
+    try {
+      console.log(`[AuthService] Checking if user exists: ${email}`);
+      
+      // Query Firestore for users with this email
+      const usersRef = collection(db, 'users');
+      const q = query(usersRef, where('email', '==', email));
+      const querySnapshot = await getDocs(q);
+      
+      const exists = !querySnapshot.empty;
+      console.log(`[AuthService] User ${email} exists: ${exists}`);
+      return exists;
+    } catch (error) {
+      console.error(`[AuthService] Error checking if user exists:`, error);
+      return false;
     }
-    
-    console.log('[AuthService] Demo accounts check completed');
+  }
+
+  /**
+   * Create a new user with email and password
+   */
+  async createUserWithEmailAndPassword(email: string, password: string): Promise<FirebaseUser | null> {
+    try {
+      console.log(`[AuthService] Creating user with email: ${email}`);
+      
+      // Create user with Firebase Auth
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      const user = userCredential.user;
+      
+      if (!user) {
+        console.log(`[AuthService] Failed to create user: No user returned`);
+        return null;
+      }
+      
+      console.log(`[AuthService] User created successfully: ${user.uid}`);
+      
+      // Return user data
+      return {
+        uid: user.uid,
+        email: user.email,
+        displayName: user.displayName,
+        photoURL: user.photoURL
+      };
+    } catch (error: any) {
+      console.error(`[AuthService] Error creating user:`, error);
+      throw {
+        code: error.code || 'auth/unknown',
+        message: getAuthErrorMessage(error.code) || error.message,
+        provider: 'email',
+        details: error,
+        retryable: false
+      } as AuthError;
+    }
   }
 
   async getUserProfile(userId: string): Promise<UserProfile | null> {
@@ -770,49 +840,6 @@ class AuthService {
     }
   }
 
-  async checkUserExists(email: string): Promise<boolean> {
-    try {
-      const usersRef = collection(db, 'users');
-      const q = query(usersRef, where('email', '==', email));
-      const querySnapshot = await getDocs(q);
-      return !querySnapshot.empty;
-    } catch (error) {
-      console.error('Error checking if user exists:', error);
-      return false;
-    }
-  }
-
-  async createUserWithEmailAndPassword(email: string, password: string): Promise<FirebaseUser | null> {
-    try {
-      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-      const user = userCredential.user;
-      if (user) {
-        return {
-          uid: user.uid,
-          email: user.email,
-          displayName: user.displayName,
-          photoURL: user.photoURL,
-          role: 'fan',
-          isVerified: false
-        };
-      }
-      return null;
-    } catch (error) {
-      console.error('Error creating user with email and password:', error);
-      throw error;
-    }
-  }
-
-  async updateUserRole(userId: string, role: 'athlete' | 'fan' | 'admin'): Promise<void> {
-    try {
-      const userRef = doc(db, 'users', userId);
-      await updateDoc(userRef, { role });
-    } catch (error) {
-      console.error('Error updating user role:', error);
-      throw error;
-    }
-  }
-
   async getAllUsers(): Promise<UserProfile[]> {
     try {
       const usersRef = collection(db, 'users');
@@ -831,6 +858,23 @@ class AuthService {
     } catch (error) {
       console.error('Error getting all users:', error);
       return [];
+    }
+  }
+
+  /**
+   * Update a user's role
+   */
+  async updateUserRole(userId: string, role: 'athlete' | 'fan' | 'admin'): Promise<void> {
+    try {
+      console.log(`[AuthService] Updating user ${userId} role to ${role}`);
+      
+      const userRef = doc(db, 'users', userId);
+      await updateDoc(userRef, { role });
+      
+      console.log(`[AuthService] User role updated successfully`);
+    } catch (error) {
+      console.error('[AuthService] Error updating user role:', error);
+      throw error;
     }
   }
 }

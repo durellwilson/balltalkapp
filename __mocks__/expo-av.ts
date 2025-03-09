@@ -1,64 +1,107 @@
 // Mock for expo-av module
+const mockSound = {
+  playAsync: jest.fn().mockResolvedValue({}),
+  pauseAsync: jest.fn().mockResolvedValue({}),
+  stopAsync: jest.fn().mockResolvedValue({}),
+  unloadAsync: jest.fn().mockResolvedValue({}),
+  setPositionAsync: jest.fn().mockResolvedValue({}),
+  setVolumeAsync: jest.fn().mockResolvedValue({}),
+  setRateAsync: jest.fn().mockResolvedValue({}),
+  setIsMutedAsync: jest.fn().mockResolvedValue({}),
+  setIsLoopingAsync: jest.fn().mockResolvedValue({}),
+  getStatusAsync: jest.fn().mockResolvedValue({
+    isLoaded: true,
+    positionMillis: 0,
+    durationMillis: 30000,
+    isPlaying: false,
+    rate: 1,
+    shouldCorrectPitch: false,
+    volume: 1,
+    isMuted: false,
+    isLooping: false,
+    didJustFinish: false
+  })
+};
+
+const mockRecording = {
+  prepareToRecordAsync: jest.fn().mockResolvedValue({}),
+  startAsync: jest.fn().mockResolvedValue({}),
+  pauseAsync: jest.fn().mockResolvedValue({}),
+  stopAndUnloadAsync: jest.fn().mockResolvedValue({}),
+  getStatusAsync: jest.fn().mockResolvedValue({
+    isRecording: false,
+    durationMillis: 10000
+  }),
+  getURI: jest.fn().mockReturnValue('file://mock-recording.m4a'),
+  createNewLoadedSoundAsync: jest.fn().mockResolvedValue({
+    sound: mockSound,
+    status: { isLoaded: true }
+  })
+};
+
 const Audio = {
   Sound: {
-    createAsync: jest.fn(() => Promise.resolve({
-      sound: {
-        playAsync: jest.fn(() => Promise.resolve()),
-        pauseAsync: jest.fn(() => Promise.resolve()),
-        stopAsync: jest.fn(() => Promise.resolve()),
-        unloadAsync: jest.fn(() => Promise.resolve()),
-        getStatusAsync: jest.fn(() => Promise.resolve({
-          isLoaded: true,
-          isPlaying: false,
-          positionMillis: 0,
-          durationMillis: 1000,
-          shouldPlay: false,
-          rate: 1,
-          volume: 1
-        })),
-        setPositionAsync: jest.fn(() => Promise.resolve()),
-        setVolumeAsync: jest.fn(() => Promise.resolve()),
-        setOnPlaybackStatusUpdate: jest.fn()
-      },
-      status: {
-        isLoaded: true,
-        isPlaying: false,
-        positionMillis: 0,
-        durationMillis: 1000,
-        shouldPlay: false,
-        rate: 1,
-        volume: 1
-      }
-    }))
+    createAsync: jest.fn().mockResolvedValue({
+      sound: mockSound,
+      status: { isLoaded: true }
+    })
   },
-  Recording: jest.fn().mockImplementation(() => ({
-    prepareToRecordAsync: jest.fn(() => Promise.resolve()),
-    startAsync: jest.fn(() => Promise.resolve()),
-    stopAndUnloadAsync: jest.fn(() => Promise.resolve()),
-    getURI: jest.fn(() => 'file://test-recording.m4a'),
-    setOnRecordingStatusUpdate: jest.fn()
-  })),
-  setAudioModeAsync: jest.fn(() => Promise.resolve()),
-  INTERRUPTION_MODE_IOS_DUCK_OTHERS: 'INTERRUPTION_MODE_IOS_DUCK_OTHERS',
-  INTERRUPTION_MODE_ANDROID_DUCK_OTHERS: 'INTERRUPTION_MODE_ANDROID_DUCK_OTHERS',
+  Recording: {
+    createAsync: jest.fn().mockResolvedValue({
+      recording: mockRecording,
+      status: { canRecord: true }
+    })
+  },
+  setAudioModeAsync: jest.fn().mockResolvedValue({}),
+  InterruptionModeIOS: {
+    MixWithOthers: 0,
+    DoNotMix: 1,
+    DuckOthers: 2
+  },
+  InterruptionModeAndroid: {
+    MixWithOthers: 0,
+    DoNotMix: 1,
+    DuckOthers: 2
+  },
   RecordingOptionsPresets: {
     HIGH_QUALITY: {
       android: {
         extension: '.m4a',
-        outputFormat: 'mpeg_4',
-        audioEncoder: 'aac',
+        outputFormat: 2,
+        audioEncoder: 3,
         sampleRate: 44100,
         numberOfChannels: 2,
         bitRate: 128000
       },
       ios: {
         extension: '.m4a',
-        outputFormat: 'mpeg4AAC',
+        outputFormat: 'aac',
         audioQuality: 'high',
         sampleRate: 44100,
         numberOfChannels: 2,
         bitRate: 128000,
         linearPCMBitDepth: 16,
+        linearPCMIsBigEndian: false,
+        linearPCMIsFloat: false
+      }
+    },
+    LOW_QUALITY: {
+      android: {
+        extension: '.3gp',
+        outputFormat: 3,
+        audioEncoder: 1,
+        sampleRate: 8000,
+        numberOfChannels: 1,
+        bitRate: 24000
+      },
+      ios: {
+        extension: '.m4a',
+        outputFormat: 'aac',
+        audioQuality: 'low',
+        sampleRate: 8000,
+        numberOfChannels: 1,
+        bitRate: 24000,
+        linearPCMBitDepth: 8,
         linearPCMIsBigEndian: false,
         linearPCMIsFloat: false
       }

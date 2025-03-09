@@ -2,7 +2,7 @@
   "name": "Ball Talk",
   "slug": "balltalk",
   "scheme": "balltalk",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "orientation": "portrait",
   "icon": "./assets/images/icon.png",
   "userInterfaceStyle": "automatic",
@@ -47,6 +47,23 @@
   "extra": {
     "eas": {
       "projectId": "balltalk-app"
+    },
+    "chatFeaturesEnabled": true,
+    "premiumGroupsEnabled": true,
+    "lastUpdated": "2025-03-09T01:25:16.340Z"
+  },
+  "expo": {
+    "plugins": [
+      "expo-router"
+    ],
+    "android": {
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.CAMERA",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE"
+      ]
     }
   }
 }

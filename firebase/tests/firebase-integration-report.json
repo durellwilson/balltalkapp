@@ -1,0 +1,26 @@
+{
+  "date": "2025-03-09T00:23:53.322Z",
+  "allPassed": false,
+  "tests": [
+    {
+      "name": "Import AuthService",
+      "success": false,
+      "message": "/Users/rellonaut/Projects/balltalkapp/services/AuthService.ts: 'loose' mode configuration must be the same for @babel/plugin-transform-class-properties, @babel/plugin-transform-private-methods and @babel/plugin-transform-private-property-in-object (when they are enabled).\n\nIf you already set the same 'loose' mode for these plugins in your config, it's possible that they are enabled multiple times with different options.\nYou can re-run Babel with the BABEL_SHOW_CONFIG_FOR environment variable to show the loaded configuration:\n\tnpx cross-env BABEL_SHOW_CONFIG_FOR=/Users/rellonaut/Projects/balltalkapp/services/AuthService.ts <your build command>\nSee https://babeljs.io/docs/configuration#print-effective-configs for more info."
+    },
+    {
+      "name": "Import AudioStorageService",
+      "success": false,
+      "message": "/Users/rellonaut/Projects/balltalkapp/services/AudioStorageService.ts: 'loose' mode configuration must be the same for @babel/plugin-transform-class-properties, @babel/plugin-transform-private-methods and @babel/plugin-transform-private-property-in-object (when they are enabled).\n\nIf you already set the same 'loose' mode for these plugins in your config, it's possible that they are enabled multiple times with different options.\nYou can re-run Babel with the BABEL_SHOW_CONFIG_FOR environment variable to show the loaded configuration:\n\tnpx cross-env BABEL_SHOW_CONFIG_FOR=/Users/rellonaut/Projects/balltalkapp/services/AudioStorageService.ts <your build command>\nSee https://babeljs.io/docs/configuration#print-effective-configs for more info."
+    },
+    {
+      "name": "Auth Service Tests",
+      "success": false,
+      "message": ""
+    },
+    {
+      "name": "Audio Storage Tests",
+      "success": false,
+      "message": ""
+    }
+  ]
+}

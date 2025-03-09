@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -6,1394 +6,1279 @@ import {
   TouchableOpacity,
   ScrollView,
   ActivityIndicator,
+  Platform,
   Alert,
-  Modal,
-  TextInput,
-  Dimensions
+  Dimensions,
+  TextInput
 } from 'react-native';
-import { useAuth } from '../../contexts/auth';
-import DawService from '../../services/DawService';
-
+import { Audio, InterruptionModeAndroid, InterruptionModeIOS } from 'expo-av';
+import { Ionicons, MaterialIcons } from '@expo/vector-icons';
+import { useAuth } from '../../hooks/useAuth';
+import { useTheme } from '../../hooks/useTheme';
+import RecordingInterface from './RecordingInterface';
+import TrackUploader from './TrackUploader';
+import TrackBrowser from './TrackBrowser';
+import AudioWaveform from './AudioWaveform';
+import AudioProcessingControls from './AudioProcessingControls';
+import DawService, { DawService as DawServiceClass } from '../../services/DawService';
+import { AudioStorageService } from '../../services/audio/AudioStorageService';
+import { AudioProcessingService } from '../../services/audio/AudioProcessingService';
+import { Project, Track, AudioProcessingOptions } from './StudioTypes';
 import Colors from '../../constants/Colors';
-import { Ionicons, MaterialIcons, FontAwesome5, Entypo } from '@expo/vector-icons';
-// Import Audio from Expo AV - commented out since we're using a mock implementation
-import { Audio } from 'expo-av';
-import BeatLibrary from './BeatLibrary';
-import { Picker } from '@react-native-picker/picker';
-import SongUploadForm from './SongUploadForm';
-import SongService from '../../services/SongService';
-import { Project, Track } from './StudioTypes';
-import CollaborationPanel from './CollaborationPanel';
-import AudioFileUploader from './AudioFileUploader';
-import AudioLibrary from './AudioLibrary';
-import AudioStorageService, { AudioFileMetadata } from '../../services/AudioStorageService';
+import AudioEffectsPanel from '../audio/processing/AudioEffectsPanel';
 
-const { width } = Dimensions.get('window');
-
+/**
+ * StudioInterface Component
+ * 
+ * A comprehensive studio interface for recording, uploading, and processing audio.
+ * Follows industry standards for audio production with a modern, elegant UI.
+ * 
+ * Features:
+ * - Audio recording with visualization
+ * - File uploading with validation
+ * - Track browsing and selection
+ * - Audio processing with professional controls
+ * - Project management
+ * - Collaboration tools
+ * 
+ * @returns {React.ReactElement} The StudioInterface component
+ */
 const StudioInterface: React.FC = () => {
   const { user } = useAuth();
-    const [isLoading, setIsLoading] = useState(true);
-    const [status, setStatus] = useState<"loading" | "idle" | "error">("idle");
-  const [currentProject, setCurrentProject] = useState<Project | null>(null);
-  const [isRecording, setIsRecording] = useState(false);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [recordingTrackId, setRecordingTrackId] = useState<string | null>(null);
-  const [showNewProjectModal, setShowNewProjectModal] = useState(false);
-  const [newProjectName, setNewProjectName] = useState('');
-  const [showAddTrackModal, setShowAddTrackModal] = useState(false);
-  const [newTrackName, setNewTrackName] = useState('');
-  const [recordingTime, setRecordingTime] = useState(0);
-  const [playbackPosition, setPlaybackPosition] = useState(0);
-  const [projectDuration, setProjectDuration] = useState(0);
-  const [showBeatLibrary, setShowBeatLibrary] = useState(false);
-  const [selectedTrackId, setSelectedTrackId] = useState<string | null>(null);
-    const [showUploadForm, setShowUploadForm] = useState(false);
-    const [showCollaborationPanel, setShowCollaborationPanel] = useState(false);
-    const [showAudioFileUploader, setShowAudioFileUploader] = useState(false);
-    const [uploadTargetTrackId, setUploadTargetTrackId] = useState<string | null>(null);
-    const [showAudioLibrary, setShowAudioLibrary] = useState(false);
-
-    // References
-    const recordingRef = useRef<Audio.Recording | null>(null);
-  const playbackRef = useRef<Audio.Sound | null>(null);
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
-
-  // Load current project or create a new one
-  useEffect(() => {
-    if (user) {
-      loadCurrentProject();
-    }
-
-    return () => {
-      // Clean up recording and playback
-      stopRecording();
-      stopPlayback();
-
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-      }
+  const { theme, isDark } = useTheme();
+  
+  // Ensure theme is available with fallback values - use a stable reference
+  const safeTheme = useMemo(() => {
+    if (theme) return theme;
+    
+    return {
+      tint: '#007AFF',
+      background: isDark ? '#121212' : '#FFFFFF',
+      text: isDark ? '#FFFFFF' : '#000000',
+      textSecondary: isDark ? '#CCCCCC' : '#666666',
+      cardBackground: isDark ? '#333333' : '#F8F8F8',
+      border: isDark ? '#444444' : '#EEEEEE',
+      error: '#FF3B30',
+      success: '#34C759',
+      warning: '#FF9500',
+      primary: '#007AFF',
+      secondary: '#5856D6',
+      accent: '#FF2D55',
+      cardBackgroundLight: '#F8F8F8',
     };
-  }, [user]);
-
-    useEffect(() => {
-        if (currentProject && currentProject.tracks.length > 0) {
-            setSelectedTrackId(currentProject.tracks[0].id);
-        }
-    }, [currentProject]);
-
-  const loadCurrentProject = async () => {
-    setIsLoading(true);
+  }, [theme, isDark]);
+  
+  const [currentProject, setCurrentProject] = useState<Project | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [activeView, setActiveView] = useState<'welcome' | 'record' | 'upload' | 'browse' | 'edit' | 'effects'>('welcome');
+  const [audioUri, setAudioUri] = useState<string | null>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [playbackPosition, setPlaybackPosition] = useState(0);
+  const [audioDuration, setAudioDuration] = useState(0);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [processingProgress, setProcessingProgress] = useState(0);
+  const [currentPosition, setCurrentPosition] = useState(0);
+  const [trackTitle, setTrackTitle] = useState('');
+  const [sound, setSound] = useState<Audio.Sound | null>(null);
+  const [isBuffering, setIsBuffering] = useState(false);
+  
+  const soundRef = useRef<Audio.Sound | null>(null);
+  const positionUpdateInterval = useRef<NodeJS.Timeout | null>(null);
+  
+  /**
+   * Initialize audio session
+   * Sets up the audio session with appropriate settings for recording and playback
+   */
+  const initializeAudio = useCallback(async () => {
     try {
-      // Get the user's current project
-      const projects = await DawService.getProjects(user?.uid || '');
-
-      if (projects && projects.length > 0) {
-        // Use the most recent project
-        const latestProject = projects[0];
-        setCurrentProject(latestProject);
-
-        // Calculate project duration
-        calculateProjectDuration(latestProject);
-      } else {
-        // No projects found, show the new project modal
-        setShowNewProjectModal(true);
-      }
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+        staysActiveInBackground: true,
+        shouldDuckAndroid: true,
+        interruptionModeIOS: InterruptionModeIOS.DuckOthers,
+        interruptionModeAndroid: InterruptionModeAndroid.DuckOthers,
+        playThroughEarpieceAndroid: false,
+      });
+      
+      // Set audio quality for recording
+      await Audio.Recording.createAsync(
+        Audio.RecordingOptionsPresets.HIGH_QUALITY
+      ).then(recording => {
+        if (recording) {
+          recording.recording.stopAndUnloadAsync();
+        }
+      });
+      
+      console.log('Audio session initialized successfully with high quality settings');
     } catch (error) {
-      console.error('Error loading project:', error);
+      console.error('Failed to initialize audio session:', error);
+      setError('Failed to initialize audio. Please restart the app.');
+    }
+  }, []);
+  
+  /**
+   * Load user's current project or create a new one
+   */
+  const loadCurrentProject = useCallback(async () => {
+    if (!user) return;
+    
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+      // Get user's projects
+      const projects = await DawServiceClass.getUserProjects(user.uid);
+      
+      if (projects && projects.length > 0) {
+        // Sort by last updated and get the most recent
+        const sortedProjects = [...projects].sort((a, b) => 
+          new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+        );
+        
+        const latestProject = sortedProjects[0];
+        setCurrentProject(latestProject);
+        
+        // Log successful project load
+        console.log('[StudioInterface] Loaded existing project:', latestProject.id);
+      } else {
+        // Create a new project if none exists
+        console.log('[StudioInterface] No existing projects found, creating new project');
+        
+        try {
+          // Initialize a new DawService instance for this operation
+          const dawServiceInstance = new DawServiceClass();
+          const newProject = await dawServiceInstance.createProject(
+            user.uid,
+            'New Project',
+            {
+              tempo: 120,
+              description: 'My first project',
+              isPublic: false,
+              tags: ['new']
+            }
+          );
+          
+          setCurrentProject(newProject);
+          console.log('[StudioInterface] Created new project:', newProject.id);
+        } catch (createError: any) {
+          console.error('[StudioInterface] Error creating new project:', createError);
+          setError(`Failed to create new project: ${createError.message}`);
+          Alert.alert(
+            'Error',
+            'Failed to create new project. Please try again or contact support if the problem persists.'
+          );
+        }
+      }
+    } catch (error: any) {
+      console.error('[StudioInterface] Error loading project:', error);
+      setError(`Failed to load project: ${error.message}`);
       Alert.alert(
         'Error',
-        'Failed to load your studio project. Please try again.'
+        'Failed to load project. Please check your connection and try again.'
       );
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const calculateProjectDuration = (project: Project) => {
-    // Find the longest track
-    let maxDuration = 0;
-
-    project.tracks.forEach((track) => {
-      // Prioritize beat duration if available, otherwise use recording duration
-      if (track.beatId) {
-        // In a real app, we would get the actual duration of the beat
-        // For now, use a placeholder
-        const beatDuration = 30; // Placeholder
-        maxDuration = Math.max(maxDuration, beatDuration);
-      } else if (track.audioUri) {
-        // In a real app, we would get the actual duration of the audio file
-        // For now, we'll use a placeholder value
-        const trackDuration = 60; // 60 seconds placeholder
-        maxDuration = Math.max(maxDuration, trackDuration);
+  }, [user]);
+  
+  /**
+   * Handle recording completion
+   * @param {string} recordingUri - The URI of the completed recording
+   * @param {number} duration - The duration of the recording in seconds
+   */
+  const handleRecordingComplete = async (recordingUri: string, duration: number) => {
+    console.log('Recording complete, loading audio:', recordingUri);
+    
+    let retryCount = 0;
+    const maxRetries = 3;
+    
+    const configureAudioSession = async () => {
+      try {
+        await Audio.setAudioModeAsync({
+          allowsRecordingIOS: false,
+          playsInSilentModeIOS: true,
+          staysActiveInBackground: true,
+          interruptionModeIOS: 1,
+          interruptionModeAndroid: 1,
+          shouldDuckAndroid: true,
+          playThroughEarpieceAndroid: false,
+        });
+        return true;
+      } catch (error) {
+        console.error('Error configuring audio session:', error);
+        return false;
       }
-    });
-
-    setProjectDuration(maxDuration);
-  };
-
-  const createNewProject = async () => {
-    if (!newProjectName.trim()) {
-      Alert.alert('Error', 'Please enter a project name');
-      return;
-    }
-
-    setIsLoading(true);
-    try {
-      const newProject: Project = {
-        id: `project-${Date.now()}`,
-        name: newProjectName,
-        tracks: [],
-        tempo: 120,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-
-      // Save the new project
-      // await DawService.saveProject(user?.uid || '', newProject);
-
-      setCurrentProject(newProject);
-      setShowNewProjectModal(false);
-      setNewProjectName('');
-    } catch (error) {
-      console.error('Error creating project:', error);
-      Alert.alert('Error', 'Failed to create a new project. Please try again.');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-    const handleSelectBeat = async (beat: { id: string; name: string; url: string }) => {
-        if (!currentProject) return;
-
-        if (!selectedTrackId) {
-            Alert.alert('Error', 'Please select a track to add the beat to.');
-            return;
-        }
-
-        try {
-            // await DawService.addBeatToTrack(currentProject.id, selectedTrackId, beat.id, beat.url);
-            const updatedProject = await DawService.getProjects(user?.uid || '');
-            setCurrentProject(updatedProject[0]);
-            setShowBeatLibrary(false);
-            calculateProjectDuration(updatedProject[0]);
-
-        } catch (error) {
-            console.error('Error adding track from beat:', error);
-            Alert.alert('Error', 'Failed to add track with selected beat. Please try again.');
-        }
-    }
-
-    const addNewTrack = async (): Promise<void> => {
-        if (!currentProject) return;
-        if (!newTrackName.trim()) {
-            Alert.alert('Error', 'Please enter a track name');
-            return;
-        }
-
-        try {
-            const newTrack: Track = {
-                id: `track-${Date.now()}`,
-                name: newTrackName,
-                isRecording: false,
-                isPlaying: false,
-                volume: 1.0, // Add initial volume
-            };
-
-            const updatedProject = {
-                ...currentProject,
-                tracks: [...currentProject.tracks, newTrack],
-                updatedAt: new Date().toISOString()
-            };
-
-            // Save the updated project
-            // await DawService.saveProject(user?.uid || '', updatedProject);
-
-            setCurrentProject(updatedProject);
-            setShowAddTrackModal(false);
-            setNewTrackName('');
-        } catch (error) {
-            console.error('Error adding track:', error);
-            Alert.alert('Error', 'Failed to add a new track. Please try again.');
-        }
     };
-
-  const startRecording = async (trackId: string) => {
-    if (!currentProject) return;
-
-    try {
-            // Configure audio session
-            await Audio.setAudioModeAsync({
-                allowsRecordingIOS: true,
-                playsInSilentModeIOS: true,
-                staysActiveInBackground: true,
-                shouldDuckAndroid: true,
-            });
-
-      // Start recording
-      const recording = new Audio.Recording();
-      await recording.prepareToRecordAsync(
-        Audio.RecordingOptionsPresets.HIGH_QUALITY
-      );
-      await recording.startAsync();
-
-      recordingRef.current = recording;
-      setIsRecording(true);
-      setRecordingTrackId(trackId);
-      setRecordingTime(0);
-
-      // Start timer
-      timerRef.current = setInterval(() => {
-        setRecordingTime((prev) => prev + 1);
-      }, 1000);
-
-      // Update track state
-      const updatedTracks = currentProject.tracks.map((track) => {
-        if (track.id === trackId) {
-          return { ...track, isRecording: true };
+    
+    const preloadAudio = async () => {
+      try {
+        console.log('Pre-loading audio for immediate playback');
+        const { sound } = await Audio.Sound.createAsync(
+          { uri: recordingUri },
+          { shouldPlay: false }
+        );
+        await sound.unloadAsync(); // Clean up after preload
+        return true;
+      } catch (error) {
+        console.error('Failed to pre-load audio:', error);
+        return false;
+      }
+    };
+    
+    while (retryCount < maxRetries) {
+      try {
+        // Configure audio session
+        const sessionConfigured = await configureAudioSession();
+        if (!sessionConfigured) throw new Error('Failed to configure audio session');
+        
+        // Pre-load audio
+        const audioPreloaded = await preloadAudio();
+        if (!audioPreloaded) throw new Error('Failed to pre-load audio');
+        
+        // Load audio for processing
+        const loaded = await loadAudio(recordingUri);
+        if (!loaded) throw new Error('Failed to load audio for processing');
+        
+        console.log('Audio loaded successfully, switching to edit view');
+        setActiveView('edit');
+        
+        // Auto-play the recording after a short delay
+        setTimeout(() => {
+          togglePlayback().catch(error => {
+            console.error('Error auto-playing recording:', error);
+            setError('Failed to auto-play the recording');
+          });
+        }, 500);
+        
+        return; // Success - exit the retry loop
+        
+      } catch (error) {
+        console.error(`Attempt ${retryCount + 1} failed:`, error);
+        retryCount++;
+        
+        if (retryCount < maxRetries) {
+          console.log(`Retrying audio loading (attempt ${retryCount + 1}/${maxRetries})...`);
+          await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
+        } else {
+          console.error('Failed to load recorded audio after multiple attempts');
+          setError('Failed to load the recording. Please try again.');
+          setActiveView('welcome');
         }
-        return track;
-      });
-
-      setCurrentProject({
-        ...currentProject,
-        tracks: updatedTracks,
-      });
-    } catch (error: any) {
-      console.error('Error starting recording:', error);
-      if (error.message === "Mock preparation failed") {
-        Alert.alert(
-          'Recording Error',
-          'Failed to prepare for recording. Please check your device settings and try again.'
-        );
-      } else if (error.message === "Mock start failed") {
-        Alert.alert(
-          'Recording Error',
-          'Failed to start recording. Please try again shortly.'
-        );
-      } else {
-        Alert.alert(
-          'Recording Error',
-          'Failed to start recording. Please try again.'
-        );
       }
     }
   };
-
-  const stopRecording = async (): Promise<void> => {
-    if (
-      !recordingRef.current ||
-      !isRecording ||
-      !currentProject ||
-      !recordingTrackId
-    )
-      return;
-
+  
+  /**
+   * Handle upload completion
+   * @param {Object} data - The uploaded file data
+   */
+  const handleUploadComplete = async (data: {
+    audioUri: string;
+    coverArtUri?: string;
+    title: string;
+    genre: string;
+    description?: string;
+  }) => {
+    const loaded = await loadAudio(data.audioUri);
+    
+    if (loaded) {
+      setActiveView('edit');
+    }
+  };
+  
+  /**
+   * Handle track selection from browser
+   * @param {Object} track - The selected track
+   */
+  const handleTrackSelect = async (track: any) => {
+    if (track && track.audioUrl) {
+      const loaded = await loadAudio(track.audioUrl);
+      
+      if (loaded) {
+        setActiveView('edit');
+      }
+    }
+  };
+  
+  /**
+   * Load audio file for playback and editing
+   * @param {string} uri - The URI of the audio file
+   * @returns {Promise<boolean>} Success status
+   */
+  const loadAudio = async (uri: string): Promise<boolean> => {
+    if (!uri) return false;
+    
     try {
-      // Stop recording
-      await recordingRef.current.stopAndUnloadAsync();
-
-      // Get the recording URI
-      const uri = recordingRef.current.getURI();
-
-      if (uri) {
-        // Save the recording
-        const recordingInfo = await DawService.saveRecording(
-          user?.uid || '',
-          uri,
-          recordingTime,
-          currentProject.id,
-          recordingTrackId
-        );
-
-                // Update track with the mock Firebase Storage URL
-                const updatedTracks = currentProject.tracks.map((track) => {
-                    if (track.id === recordingTrackId) {
-                        return { ...track, isRecording: false, audioUri: recordingInfo.url }; // Use recordingInfo.url
-                    }
-                    return track;
-                });
-
-        const updatedProject = {
-          ...currentProject,
-          tracks: updatedTracks,
-          updatedAt: new Date().toISOString(),
-        };
-
-        // Save the updated project
-        // await DawService.saveProject(user?.uid || '', updatedProject);
-
-        setCurrentProject(updatedProject);
-        calculateProjectDuration(updatedProject);
-      }
-    } catch (error) {
-      console.error('Error stopping recording:', error);
-      Alert.alert(
-        'Recording Error',
-        'Failed to save recording. Please try again.'
-      );
-    } finally {
-      // Clean up
-      recordingRef.current = null;
-      setIsRecording(false);
-      setRecordingTrackId(null);
-
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-      }
-
-      // Reset audio mode
+      console.log('Loading audio from URI:', uri);
+      setIsLoading(true);
+      
+      // Configure audio session for optimal playback
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: false,
         playsInSilentModeIOS: true,
         staysActiveInBackground: true,
+        interruptionModeIOS: InterruptionModeIOS.DuckOthers,
+        interruptionModeAndroid: InterruptionModeAndroid.DuckOthers,
         shouldDuckAndroid: true,
+        playThroughEarpieceAndroid: false,
       });
-    }
-  };
-
-  const playTrack = async (trackId: string): Promise<void> => {
-    if (!currentProject) return;
-
-    try {
-      const track = currentProject.tracks.find((t) => t.id === trackId);
-            if (!track || !track.audioUri) return;
-
-            // Load and play the sound
-            const { sound } = await Audio.Sound.createAsync(
-                { uri: track.audioUri },
-                { shouldPlay: true, volume: track.volume } // Use track volume
-            );
-
-      playbackRef.current = sound;
-
-      // Update track state
-      const updatedTracks = currentProject.tracks.map((t) => {
-        if (t.id === trackId) {
-          return { ...t, isPlaying: true };
-        }
-        return t;
-      });
-
-      setCurrentProject({
-        ...currentProject,
-        tracks: updatedTracks,
-      });
-
-      // Listen for playback status updates
-      sound.setOnPlaybackStatusUpdate((status) => {
-        if (status.isLoaded) {
-          if (status.didJustFinish) {
-            // Playback finished
-            stopTrack(trackId);
-          }
-        }
-      });
+      
+      // Unload any existing sound
+      if (soundRef.current) {
+        console.log('Unloading previous sound');
+        await soundRef.current.unloadAsync();
+        soundRef.current = null;
+      }
+      
+      // Clear any existing interval
+      if (positionUpdateInterval.current) {
+        clearInterval(positionUpdateInterval.current);
+        positionUpdateInterval.current = null;
+      }
+      
+      // Load the sound
+      console.log('Creating sound object from URI');
+      const { sound, status } = await Audio.Sound.createAsync(
+        { uri },
+        { 
+          progressUpdateIntervalMillis: 100,
+          positionMillis: 0,
+          shouldPlay: false,
+          rate: 1.0,
+          shouldCorrectPitch: true,
+          volume: 1.0,
+          isMuted: false
+        },
+        onPlaybackStatusUpdate
+      );
+      
+      // Store the sound reference
+      soundRef.current = sound;
+      
+      // Set audio duration if available
+      if (status && 'durationMillis' in status && status.durationMillis) {
+        setAudioDuration(status.durationMillis / 1000);
+      }
+      
+      // Set the audio URI
+      setAudioUri(uri);
+      
+      console.log('Audio loaded successfully');
+      setIsLoading(false);
+      return true;
     } catch (error) {
-      console.error('Error playing track:', error);
-      Alert.alert('Playback Error', 'Failed to play track. Please try again.');
+      console.error('Error loading audio:', error);
+      setError(`Failed to load audio: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      setIsLoading(false);
+      return false;
     }
   };
-
-  const stopTrack = async (trackId: string): Promise<void> => {
-    if (!currentProject || !playbackRef.current) return;
-
-    try {
-      // Stop playback
-      await playbackRef.current.stopAsync();
-      await playbackRef.current.unloadAsync();
-      playbackRef.current = null;
-
-      // Update track state
-      const updatedTracks = currentProject.tracks.map((track) => {
-        if (track.id === trackId) {
-          return { ...track, isPlaying: false };
-        }
-        return track;
-      });
-
-      setCurrentProject({
-        ...currentProject,
-        tracks: updatedTracks,
-      });
-    } catch (error) {
-      console.error('Error stopping track:', error);
-    }
-  };
-
-  const playAllTracks = async (): Promise<void> => {
-    if (!currentProject || currentProject.tracks.length === 0) {
-      console.log('No tracks to play');
+  
+  /**
+   * Handle playback status updates
+   * @param status - The playback status object
+   */
+  const onPlaybackStatusUpdate = (status: any) => {
+    if (!status.isLoaded) {
+      // Handle error or unloaded state
+      setIsPlaying(false);
+      setIsBuffering(false);
       return;
     }
 
-    setIsPlaying(true);
+    // Update state with current playback position and status
+    setCurrentPosition(status.positionMillis / 1000);
+    setIsPlaying(status.isPlaying);
+    setIsBuffering(status.isBuffering);
+
+    // Handle playback completion
+    if (status.didJustFinish) {
+      // Reset to start of track
+      sound?.setPositionAsync(0).catch(console.error);
+      setIsPlaying(false);
+    }
     
-    try {
-      console.log('Starting playback of all tracks...');
-      
-      // Initialize playback position
-      setPlaybackPosition(0);
-      
-      // Start timer to update playback position
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-      }
-      
-      timerRef.current = setInterval(() => {
-        setPlaybackPosition((prev) => {
-          if (prev >= projectDuration) {
-            if (timerRef.current) {
-              clearInterval(timerRef.current);
-            }
-            setIsPlaying(false);
-            return 0;
+    // Log any playback errors to help debug
+    if (status.error) {
+      console.error('Playback error:', status.error);
+      setError(`Playback error: ${status.error}`);
+    }
+  };
+  
+  /**
+   * Toggle playback state
+   */
+  const togglePlayback = async () => {
+    if (!sound) {
+      // If no sound is loaded yet, load the audio
+      if (audioUri) {
+        try {
+          console.log('Loading audio from URI:', audioUri);
+          
+          // Unload any previous sound instance
+          if (sound) {
+            await sound.unloadAsync();
           }
-          return prev + 0.1;
-        });
-      }, 100);
-      
-      // Play each track
-      for (const track of currentProject.tracks) {
-        if (track.audioUrl || track.audioUri) {
-          try {
-            console.log(`Playing track: ${track.name}`);
-            
-            // Create a new sound object
-            const { sound } = await Audio.Sound.createAsync(
-              { uri: track.audioUrl || track.audioUri },
-              { shouldPlay: true }
-            );
-            
-            // Store sound reference for later cleanup
-            track.sound = sound;
-          } catch (trackError) {
-            console.error(`Error playing track ${track.name}:`, trackError);
-          }
+          
+          // Create a new sound instance
+          const { sound: newSound } = await Audio.Sound.createAsync(
+            { uri: audioUri },
+            { shouldPlay: true },
+            onPlaybackStatusUpdate
+          );
+          
+          // Store the sound instance
+          setSound(newSound);
+          setIsPlaying(true);
+        } catch (error) {
+          console.error('Error loading audio:', error);
+          setError(`Failed to load audio: ${error instanceof Error ? error.message : String(error)}`);
         }
       }
-    } catch (error) {
-      console.error('Error starting playback:', error);
-      setIsPlaying(false);
-      Alert.alert('Playback Error', 'Could not play tracks. Please try again.');
+    } else {
+      // Toggle playback of existing sound
+      try {
+        if (isPlaying) {
+          await sound.pauseAsync();
+        } else {
+          await sound.playAsync();
+        }
+      } catch (error) {
+        console.error('Error toggling playback:', error);
+        setError(`Playback error: ${error instanceof Error ? error.message : String(error)}`);
+        
+        // If we encounter an error, try to reload the sound
+        try {
+          await sound.unloadAsync();
+          const { sound: newSound } = await Audio.Sound.createAsync(
+            { uri: audioUri },
+            { shouldPlay: true },
+            onPlaybackStatusUpdate
+          );
+          setSound(newSound);
+          setIsPlaying(true);
+        } catch (reloadError) {
+          console.error('Failed to reload audio after error:', reloadError);
+        }
+      }
     }
   };
-
-  const stopPlayback = async (): Promise<void> => {
-    if (!currentProject) return;
-
+  
+  /**
+   * Seek to a specific position in the audio
+   * @param {number} position - The position in seconds
+   */
+  const seekTo = async (position: number) => {
+    if (!soundRef.current || !audioUri) return;
+    
     try {
-      // Stop all playing tracks
-      const playingTracks = currentProject.tracks.filter((track) => track.isPlaying);
-
-      for (const track of playingTracks) {
-        await stopTrack(track.id);
+      // Validate position is a finite number
+      if (!Number.isFinite(position)) {
+        console.warn('Invalid seek position:', position);
+        return;
       }
-
-      setIsPlaying(false);
-
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-      }
-    } catch (error) {
-      console.error('Error stopping playback:', error);
+      
+      // Ensure position is within valid range
+      const validPosition = Math.max(0, Math.min(position, audioDuration));
+      console.log('Starting playback from position:', validPosition);
+      
+      // Convert to milliseconds for the Audio API
+      await soundRef.current.setPositionAsync(Math.floor(validPosition * 1000));
+      setCurrentPosition(validPosition);
+    } catch (error: any) {
+      console.error('Error seeking:', error);
+      setError(`Seek error: ${error.message || 'Unknown error'}`);
     }
   };
-
-  const deleteTrack = async (trackId: string): Promise<void> => {
-    if (!currentProject) return;
-
-    Alert.alert(
-      'Delete Track',
-      'Are you sure you want to delete this track? This action cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              // Stop the track if it's playing
-              const track = currentProject.tracks.find((t) => t.id === trackId);
-              if (track?.isPlaying) {
-                await stopTrack(trackId);
-              }
-
-              // Remove the track
-              const updatedTracks = currentProject.tracks.filter(
-                (track) => track.id !== trackId
-              );
-
-              const updatedProject = {
-                ...currentProject,
-                tracks: updatedTracks,
-                updatedAt: new Date().toISOString(),
-              };
-
-              // Save the updated project
-              // await DawService.saveProject(user?.uid || '', updatedProject);
-
-              setCurrentProject(updatedProject);
-              calculateProjectDuration(updatedProject);
-            } catch (error) {
-              console.error('Error deleting track:', error);
-              Alert.alert('Error', 'Failed to delete track. Please try again.');
-            }
-          },
-        },
-      ]
-    );
+  
+  /**
+   * Process audio with selected effects
+   * @param {Object} processingOptions - The audio processing options
+   */
+  const processAudio = async (processingOptions: any) => {
+    if (!audioUri) return;
+    
+    try {
+      setIsProcessing(true);
+      setProcessingProgress(0);
+      setError(null);
+      
+      const onProgress = (progress: number) => {
+        setProcessingProgress(progress);
+      };
+      
+      const result = await AudioProcessingService.processAudio(
+        audioUri,
+        processingOptions,
+        onProgress
+      );
+      
+      // Handle the result based on its structure
+      if (result) {
+        let outputUri = '';
+        
+        // Check if result is an object with outputUri property
+        if (typeof result === 'object' && result !== null && 'outputUri' in result) {
+          outputUri = (result as { outputUri: string }).outputUri;
+        } 
+        // Check if result is a string (direct URI)
+        else if (typeof result === 'string') {
+          outputUri = result;
+        }
+        
+        if (outputUri) {
+          // Load the processed audio
+          const loaded = await loadAudio(outputUri);
+          
+          if (loaded) {
+            Alert.alert('Success', 'Audio processing completed successfully');
+          } else {
+            throw new Error('Failed to load processed audio');
+          }
+        } else {
+          throw new Error('Audio processing failed to return a valid URI');
+        }
+      } else {
+        throw new Error('Audio processing failed');
+      }
+    } catch (error: any) {
+      console.error('Error processing audio:', error);
+      setError(`Processing error: ${error.message || 'Unknown error'}`);
+    } finally {
+      setIsProcessing(false);
+    }
   };
-
+  
+  /**
+   * Format time in seconds to MM:SS format
+   * @param {number} seconds - Time in seconds
+   * @returns {string} Formatted time string
+   */
   const formatTime = (seconds: number): string => {
-    const mins = Math.floor(seconds / 60);
-    const secs = Math.floor(seconds % 60);
-    return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = Math.floor(seconds % 60);
+    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
   };
-
-  const renderTrackControls = (track: Track) => {
-    const hasAudio = !!track.audioUri;
-
-    return (
-      <View style={styles.trackControls}>
-        {track.isRecording ? (
-          <TouchableOpacity
-            style={[styles.trackButton, styles.stopRecordingButton]}
-            onPress={stopRecording}
-          >
-            <Ionicons name="stop" size={18} color="white" />
-          </TouchableOpacity>
-        ) : (
-          <TouchableOpacity
-            style={[
-              styles.trackButton,
-              styles.recordButton,
-              isRecording && styles.disabledButton,
-            ]}
-            onPress={() => startRecording(track.id)}
-            disabled={isRecording}
-          >
-            <Ionicons name="mic" size={18} color="white" />
-          </TouchableOpacity>
-        )}
-
-        {hasAudio && (
-          <>
-            {track.isPlaying ? (
-              <TouchableOpacity
-                style={[styles.trackButton, styles.stopButton]}
-                onPress={() => stopTrack(track.id)}
-              >
-                <Ionicons name="stop" size={18} color="white" />
-              </TouchableOpacity>
-            ) : (
-              <TouchableOpacity
-                style={[styles.trackButton, styles.playButton]}
-                onPress={() => playTrack(track.id)}
-                disabled={isRecording}
-              >
-                <Ionicons name="play" size={18} color="white" />
-              </TouchableOpacity>
-            )}
-          </>
-        )}
-
+  
+  // Use useEffect with proper dependencies
+  useEffect(() => {
+    // Initialize audio when component mounts
+    initializeAudio().catch(err => {
+      console.error('Failed to initialize audio:', err);
+      setError('Failed to initialize audio. Please restart the app.');
+    });
+    
+    // Load current project if user is authenticated
+    if (user) {
+      loadCurrentProject().catch(err => {
+        console.error('Failed to load project:', err);
+        setError('Failed to load project. Please try again.');
+      });
+    }
+    
+    // Cleanup function
+    return () => {
+      // Unload sound when component unmounts
+      if (soundRef.current) {
+        soundRef.current.unloadAsync().catch(console.error);
+      }
+      
+      // Clear interval
+      if (positionUpdateInterval.current) {
+        clearInterval(positionUpdateInterval.current);
+      }
+    };
+  }, [initializeAudio, loadCurrentProject, user]);
+  
+  /**
+   * Render the welcome screen with options
+   * @returns {React.ReactElement} The welcome screen component
+   */
+  const renderWelcomeScreen = () => (
+    <View style={[styles.welcomeContainer, { backgroundColor: safeTheme.cardBackground }]}>
+      <Text style={[styles.welcomeTitle, { color: safeTheme.text }]}>Studio</Text>
+      <Text style={[styles.welcomeSubtitle, { color: safeTheme.textSecondary }]}>
+        Create, record, and share your music
+      </Text>
+      
+      <View style={styles.optionsContainer}>
         <TouchableOpacity
-          style={[styles.trackButton, styles.uploadButton]}
-          onPress={() => showAudioFileUploaderForTrack(track.id)}
-          disabled={isRecording || track.isPlaying}
+          style={[styles.optionButton, { backgroundColor: safeTheme.primary }]}
+          onPress={() => setActiveView('record')}
         >
-          <Ionicons name="cloud-upload-outline" size={18} color="white" />
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.trackButton, styles.deleteButton]}
-          onPress={() => deleteTrack(track.id)}
-          disabled={isRecording || track.isPlaying}
-        >
-          <Ionicons name="trash-outline" size={18} color="white" />
+          <Ionicons name="mic" size={32} color="#FFFFFF" />
+          <Text style={styles.optionButtonText}>Record</Text>
         </TouchableOpacity>
         
-        <TextInput
-          style={styles.volumeInput}
-          keyboardType="numeric"
-          placeholder="Vol"
-          value={String(track.volume)}
-          onChangeText={(value) => {
-            const newVolume = parseFloat(value);
-            if (!isNaN(newVolume)) {
-              // Update track volume
-              const updatedTracks = currentProject!.tracks.map((t) => {
-                if (t.id === track.id) {
-                  return { ...t, volume: Math.max(0, Math.min(1, newVolume)) }; // Clamp between 0 and 1
+        <TouchableOpacity
+          style={[styles.optionButton, { backgroundColor: safeTheme.secondary }]}
+          onPress={() => setActiveView('upload')}
+        >
+          <Ionicons name="cloud-upload" size={32} color="#FFFFFF" />
+          <Text style={styles.optionButtonText}>Upload</Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity
+          style={[styles.optionButton, { backgroundColor: safeTheme.accent }]}
+          onPress={() => setActiveView('browse')}
+        >
+          <Ionicons name="albums" size={32} color="#FFFFFF" />
+          <Text style={styles.optionButtonText}>Browse</Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity
+          style={[styles.optionButton, { backgroundColor: '#5856D6' }]}
+          onPress={() => setActiveView('effects')}
+        >
+          <Ionicons name="options" size={32} color="#FFFFFF" />
+          <Text style={styles.optionButtonText}>Effects</Text>
+        </TouchableOpacity>
+      </View>
+      
+      {/* Test section for demo purposes */}
+      <View style={styles.testSection}>
+        <Text style={[styles.testSectionTitle, { color: safeTheme.text }]}>
+          🎉 New Feature: Audio Effects
+        </Text>
+        <Text style={[styles.testSectionDescription, { color: safeTheme.textSecondary }]}>
+          Try our new professional audio effects panel with presets, real-time preview, and advanced controls.
+        </Text>
+        <TouchableOpacity
+          style={styles.testButton}
+          onPress={() => {
+            // Load a demo track if none is loaded
+            if (!audioUri) {
+              // Use a local demo track from assets
+              const demoTrack = require('../../assets/audio/demo-track.mp3');
+              loadAudio(demoTrack).then(success => {
+                if (success) {
+                  setActiveView('effects');
+                } else {
+                  // If demo track fails to load, show an alert
+                  Alert.alert(
+                    'Demo Track Unavailable',
+                    'Please record or upload a track first to try the audio effects.',
+                    [{ text: 'OK' }]
+                  );
                 }
-                return t;
               });
-              setCurrentProject({ ...currentProject!, tracks: updatedTracks });
+            } else {
+              setActiveView('effects');
             }
           }}
+        >
+          <Ionicons name="flash" size={20} color="#FFFFFF" />
+          <Text style={styles.testButtonText}>Try Audio Effects</Text>
+        </TouchableOpacity>
+      </View>
+      
+      {error && (
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorText}>{error}</Text>
+        </View>
+      )}
+      
+      {currentProject && (
+        <View style={[styles.projectInfoContainer, { backgroundColor: safeTheme.cardBackgroundLight }]}>
+          <Text style={[styles.projectInfoTitle, { color: safeTheme.text }]}>
+            Current Project: {currentProject.name}
+          </Text>
+          <Text style={[styles.projectInfoDetail, { color: safeTheme.textSecondary }]}>
+            Tracks: {currentProject.tracks.length}
+          </Text>
+          <Text style={[styles.projectInfoDetail, { color: safeTheme.textSecondary }]}>
+            Last updated: {new Date(currentProject.updatedAt).toLocaleDateString()}
+          </Text>
+        </View>
+      )}
+    </View>
+  );
+  
+  /**
+   * Render the audio editor with a more modern design
+   */
+  const renderAudioEditor = () => (
+    <View style={[styles.editorContainer, { backgroundColor: safeTheme.cardBackground }]}>
+      <View style={styles.waveformContainer}>
+        <AudioWaveform
+          uri={audioUri}
+          height={120}
+          width="100%"
+          color={safeTheme.tint}
+          style={styles.waveform}
+          onPress={seekTo}
+          currentPosition={currentPosition}
+          duration={audioDuration}
+        />
+        
+        <View style={styles.positionIndicator} pointerEvents="none">
+          <View 
+            style={[
+              styles.positionLine, 
+              { 
+                backgroundColor: safeTheme.tint,
+                left: `${(currentPosition / audioDuration) * 100}%` 
+              }
+            ]} 
+          />
+        </View>
+      </View>
+      
+      <View style={styles.controlsRow}>
+        <Text style={[styles.timeText, { color: safeTheme.text }]}>
+          {formatTime(currentPosition)}
+        </Text>
+        
+        <TouchableOpacity 
+          style={[styles.playButton, isPlaying ? styles.pauseButton : null]}
+          onPress={togglePlayback}
+          disabled={!audioUri || isProcessing}
+        >
+          <Ionicons 
+            name={isBuffering ? "hourglass" : (isPlaying ? "pause" : "play")} 
+            size={30} 
+            color="#FFFFFF" 
+          />
+        </TouchableOpacity>
+        
+        <Text style={[styles.timeText, { color: safeTheme.text }]}>
+          {formatTime(audioDuration)}
+        </Text>
+      </View>
+      
+      <View style={styles.trackInfoContainer}>
+        <Text style={[styles.sectionTitle, { color: safeTheme.text }]}>
+          Track Information
+        </Text>
+        
+        <TextInput
+          style={[styles.input, { backgroundColor: safeTheme.inputBackground, color: safeTheme.text }]}
+          placeholder="Enter track title"
+          placeholderTextColor={safeTheme.textSecondary}
+          value={trackTitle}
+          onChangeText={setTrackTitle}
+        />
+        
+        <View style={styles.actionsRow}>
+          <TouchableOpacity
+            style={[styles.actionButton, { backgroundColor: safeTheme.primary }]}
+            onPress={() => setActiveView('record')}
+          >
+            <Ionicons name="mic" size={20} color="#FFFFFF" />
+            <Text style={styles.actionButtonText}>Record</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity
+            style={[styles.actionButton, { backgroundColor: safeTheme.secondary }]}
+            onPress={() => setActiveView('effects')}
+          >
+            <Ionicons name="options" size={20} color="#FFFFFF" />
+            <Text style={styles.actionButtonText}>Effects</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity
+            style={[styles.actionButton, { backgroundColor: safeTheme.accent }]}
+            onPress={() => saveTrack()}
+          >
+            <Ionicons name="save" size={20} color="#FFFFFF" />
+            <Text style={styles.actionButtonText}>Save</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {error && (
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorText}>{error}</Text>
+        </View>
+      )}
+    </View>
+  );
+  
+  /**
+   * Render the audio effects screen
+   * @returns {React.ReactElement} The audio effects component
+   */
+  const renderEffectsView = () => {
+    return (
+      <View style={[styles.editorContainer, { backgroundColor: safeTheme.cardBackground }]}>
+        <ScrollView style={styles.effectsScrollView} contentContainerStyle={styles.effectsScrollContent}>
+          <Text style={[styles.sectionTitle, { color: safeTheme.text }]}>
+            Audio Effects
+          </Text>
+          
+          <Text style={[styles.sectionDescription, { color: safeTheme.textSecondary }]}>
+            Apply professional audio effects to your track
+          </Text>
+          
+          {audioUri ? (
+            <AudioEffectsPanel 
+              audioUri={audioUri}
+              onProcessed={(processedUri) => {
+                // Update the audio URI with the processed version
+                setAudioUri(processedUri);
+                
+                // Show success message
+                Alert.alert(
+                  'Effects Applied',
+                  'Your audio has been processed successfully.',
+                  [{ text: 'OK' }]
+                );
+              }}
+              onError={(errorMessage) => {
+                // Show error message
+                setError(`Processing error: ${errorMessage}`);
+              }}
+            />
+          ) : (
+            <View style={styles.emptyStateContainer}>
+              <Ionicons 
+                name="musical-notes" 
+                size={64} 
+                color={isDark ? safeTheme.textSecondary : '#CCCCCC'} 
+              />
+              <Text style={[styles.emptyStateText, { color: safeTheme.text }]}>
+                No audio loaded. Record or upload a track first.
+              </Text>
+              <View style={styles.buttonRow}>
+                <TouchableOpacity
+                  style={[styles.actionButton, { backgroundColor: safeTheme.primary }]}
+                  onPress={() => setActiveView('record')}
+                >
+                  <Ionicons name="mic" size={20} color="#FFFFFF" />
+                  <Text style={styles.actionButtonText}>Record</Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity
+                  style={[styles.actionButton, { backgroundColor: safeTheme.secondary }]}
+                  onPress={() => setActiveView('upload')}
+                >
+                  <Ionicons name="cloud-upload" size={20} color="#FFFFFF" />
+                  <Text style={styles.actionButtonText}>Upload</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+          
+          <View style={styles.buttonRow}>
+            <TouchableOpacity
+              style={[styles.backButton, { backgroundColor: safeTheme.secondary }]}
+              onPress={() => setActiveView('editor')}
+            >
+              <Text style={styles.backButtonText}>Back to Editor</Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+      </View>
+    );
+  };
+  
+  /**
+   * Render the recording view
+   * @returns {React.ReactElement} The recording component
+   */
+  const renderRecordingView = () => {
+    return (
+      <View style={[styles.recordingContainer, { backgroundColor: safeTheme.cardBackground }]}>
+        <RecordingInterface 
+          onRecordingComplete={(recordingUri) => {
+            // Set the new audio URI
+            setAudioUri(recordingUri);
+            
+            // Switch to the editor view
+            setActiveView('editor');
+          }}
+          existingTrackUri={audioUri} // Pass the existing track URI for overdubbing
         />
       </View>
     );
   };
-
-  // Handle audio file upload completion
-  const handleAudioFileUploaded = (fileUrl: string, fileName: string, duration: number) => {
-    if (!currentProject) return;
-    
-    console.log(`Audio file uploaded: ${fileName}, URL: ${fileUrl}, Duration: ${duration}s`);
-    
-    // If we have a target track, update it with the new audio
-    if (uploadTargetTrackId) {
-      // Find the track
-      const trackIndex = currentProject.tracks.findIndex(t => t.id === uploadTargetTrackId);
-      
-      if (trackIndex >= 0) {
-        // Create updated tracks array
-        const updatedTracks = [...currentProject.tracks];
-        updatedTracks[trackIndex] = {
-          ...updatedTracks[trackIndex],
-          audioUri: fileUrl,
-          name: updatedTracks[trackIndex].name || fileName.split('.')[0], // Use filename as track name if none exists
-          duration: duration,
-          lastModified: new Date().toISOString(),
-        };
-        
-        // Update the project
-        const updatedProject = {
-          ...currentProject,
-          tracks: updatedTracks,
-          updatedAt: new Date().toISOString()
-        };
-        
-        // Save the project update to Firebase
-        DawService.updateProject(updatedProject)
-          .then(() => {
-            console.log('Project updated with new audio file');
-            
-            // Update local state
-            setCurrentProject(updatedProject);
-            
-            // Calculate new project duration
-            calculateProjectDuration(updatedProject);
-            
-            // Close the uploader modal
-            setShowAudioFileUploader(false);
-            
-            // Play the uploaded track after a short delay
-            setTimeout(() => {
-              playTrack(uploadTargetTrackId);
-            }, 500);
-          })
-          .catch(error => {
-            console.error('Failed to update project:', error);
-            Alert.alert('Error', 'Failed to update project with new audio');
-          });
-      }
-    } else {
-      // If no target track, create a new track with the audio
-      const newTrack: Track = {
-        id: `track-${Date.now()}`,
-        name: fileName.split('.')[0], // Use filename as track name
-        audioUri: fileUrl,
-        isRecording: false,
-        isPlaying: false,
-        volume: 1.0,
-        trackNumber: currentProject.tracks.length + 1,
-        recordingIds: [],
-        duration: duration,
-        lastModified: new Date().toISOString(),
-      };
-      
-      // Add the new track to the project
-      const updatedProject = {
-        ...currentProject,
-        tracks: [...currentProject.tracks, newTrack],
-        updatedAt: new Date().toISOString()
-      };
-      
-      // Save the project update to Firebase
-      DawService.updateProject(updatedProject)
-        .then(() => {
-          console.log('Project updated with new track');
-          
-          // Update the project state
-          setCurrentProject(updatedProject);
-          
-          // Calculate new project duration
-          calculateProjectDuration(updatedProject);
-          
-          // Close the uploader modal
-          setShowAudioFileUploader(false);
-          
-          // Select the new track
-          setSelectedTrackId(newTrack.id);
-          
-          // Play the new track after a short delay
-          setTimeout(() => {
-            playTrack(newTrack.id);
-          }, 500);
-        })
-        .catch(error => {
-          console.error('Failed to update project with new track:', error);
-          Alert.alert('Error', 'Failed to add new track to project');
-        });
-    }
-  };
-
-  // Show audio file uploader for a specific track
-  const showAudioFileUploaderForTrack = (trackId: string) => {
-    setUploadTargetTrackId(trackId);
-    setShowAudioFileUploader(true);
-  };
-
-  // Handle selecting an audio file from the library
-  const handleSelectAudioFromLibrary = (audioFile: AudioFileMetadata) => {
-    if (!currentProject) return;
-    
-    // Create a new track with the selected audio
-    const newTrack: Track = {
-      id: `track-${Date.now()}`,
-      name: audioFile.originalFileName.split('.')[0], // Use filename as track name
-      audioUri: audioFile.downloadUrl,
-      audioFileId: audioFile.id,
-      isRecording: false,
-      isPlaying: false,
-      volume: 1.0,
-      trackNumber: currentProject.tracks.length + 1,
-      recordingIds: []
-    };
-    
-    // Add the new track to the project
-    const updatedProject = {
-      ...currentProject,
-      tracks: [...currentProject.tracks, newTrack],
-      updatedAt: new Date().toISOString()
-    };
-    
-    // Update the project state
-    setCurrentProject(updatedProject);
-    
-    // Calculate new project duration
-    calculateProjectDuration(updatedProject);
-    
-    // Close the library
-    setShowAudioLibrary(false);
-    
-    Alert.alert('Success', `Audio file "${audioFile.originalFileName}" added as new track.`);
-  };
-
-  if (isLoading) {
+  
+  // Main render method
+  if (!user) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={Colors.primary} />
-        <Text style={styles.loadingText}>Loading studio...</Text>
+      <View style={[styles.container, isDark && styles.containerDark]}>
+        <View style={styles.authPrompt}>
+          <Ionicons name="lock-closed" size={48} color={isDark ? '#FFFFFF' : '#000000'} />
+          <Text style={[styles.authTitle, isDark && styles.textLight]}>
+            Sign In Required
+          </Text>
+          <Text style={[styles.authDescription, isDark && styles.textLight]}>
+            Please sign in to access the studio features.
+          </Text>
+          <TouchableOpacity
+            style={styles.signInButton}
+            onPress={() => {
+              // Navigate to sign in screen
+            }}
+          >
+            <Text style={styles.signInButtonText}>Sign In</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     );
   }
-
+  
+  if (isLoading) {
+    return (
+      <View style={[styles.container, isDark && styles.containerDark, styles.centerContent]}>
+        <ActivityIndicator size="large" color={Colors.primary} />
+        <Text style={[styles.loadingText, isDark && styles.textLight]}>
+          Loading Studio...
+        </Text>
+      </View>
+    );
+  }
+  
+  if (error) {
+    return (
+      <View style={[styles.container, isDark && styles.containerDark, styles.centerContent]}>
+        <Ionicons name="alert-circle" size={48} color="#FF3B30" />
+        <Text style={[styles.errorTitle, isDark && styles.textLight]}>
+          Error
+        </Text>
+        <Text style={[styles.errorMessage, isDark && styles.textLight]}>
+          {error}
+        </Text>
+        <TouchableOpacity
+          style={styles.retryButton}
+          onPress={() => {
+            setError(null);
+            loadCurrentProject();
+          }}
+        >
+          <Text style={styles.retryButtonText}>Retry</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+  
   return (
-    <View style={styles.container}>
-      {/* Studio Header */}
-      <View style={styles.header}>
-        <View style={styles.projectInfo}>
-          <Text style={styles.projectName}>
-            {currentProject?.name || 'New Project'}
-          </Text>
-          <Text style={styles.projectMeta}>
-            Tempo: {currentProject?.tempo || 120} BPM
-          </Text>
-        </View>
-
-        <View style={styles.transportControls}>
-          {isPlaying ? (
-            <TouchableOpacity
-              style={[styles.transportButton, styles.stopButton]}
-              onPress={stopPlayback}
-            >
-              <Ionicons name="stop" size={24} color="white" />
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity
-              style={[
-                styles.transportButton,
-                styles.playButton,
-                isRecording && styles.disabledButton,
-              ]}
-              onPress={playAllTracks}
-              disabled={isRecording}
-            >
-              <Ionicons name="play" size={24} color="white" />
-            </TouchableOpacity>
-          )}
-
-          <Text style={styles.timeDisplay}>
-            {formatTime(isRecording ? recordingTime : playbackPosition)}
-          </Text>
-        </View>
-      </View>
-
-      {/* Tracks Area */}
-      <ScrollView style={styles.tracksContainer}>
-        {currentProject?.tracks.map((track) => (
-          <View key={track.id} style={styles.trackRow}>
-            <View style={styles.trackInfo}>
-              <Text style={styles.trackName}>{track.name}</Text>
-              {track.isRecording && (
-                <View style={styles.recordingIndicator}>
-                  <Text style={styles.recordingText}>Recording</Text>
-                </View>
-              )}
-            </View>
-
-            <View style={styles.trackContent}>
-              {track.audioUri ? (
-                <View style={styles.waveformContainer}>
-                  {/* Placeholder for waveform visualization */}
-                  <View style={styles.waveformPlaceholder} />
-                </View>
-              ) : (
-                <View style={styles.emptyTrackPlaceholder}>
-                  <Text style={styles.emptyTrackText}>No audio recorded</Text>
-                </View>
-              )}
-            </View>
-
-            {renderTrackControls(track)}
-          </View>
-        ))}
-
-        {(!currentProject?.tracks || currentProject.tracks.length === 0) && (
-          <View style={styles.emptyTracksContainer}>
-            <FontAwesome5 name="music" size={40} color="#ccc" />
-            <Text style={styles.emptyTracksText}>No tracks added yet</Text>
-            <Text style={styles.emptyTracksSubtext}>
-              Add a track to start recording
-            </Text>
-          </View>
-        )}
-      </ScrollView>
-
-      {/* Bottom Toolbar */}
-      <View style={styles.toolbar}>
-        <TouchableOpacity
-          style={styles.toolbarButton}
-          onPress={() => setShowBeatLibrary(true)}
-        >
-          <Ionicons name="musical-notes-outline" size={24} color={Colors.primary} />
-          <Text style={styles.toolbarButtonText}>Beat Library</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.toolbarButton}
-          onPress={() => setShowAddTrackModal(true)}
-        >
-          <Ionicons name="add-circle-outline" size={24} color={Colors.primary} />
-          <Text style={styles.toolbarButtonText}>Add Track</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.toolbarButton}
-          onPress={() => setShowAudioFileUploader(true)}
-        >
-          <Ionicons name="document-outline" size={24} color={Colors.primary} />
-          <Text style={styles.toolbarButtonText}>Import Audio</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.toolbarButton}
-          onPress={() => setShowAudioLibrary(true)}
-        >
-          <Ionicons name="library-outline" size={24} color={Colors.primary} />
-          <Text style={styles.toolbarButtonText}>Audio Library</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.toolbarButton}
-          onPress={() => setShowCollaborationPanel(true)}
-        >
-          <Ionicons name="people-outline" size={24} color={Colors.primary} />
-          <Text style={styles.toolbarButtonText}>Collaborate</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.toolbarButton}
-          onPress={() => setShowUploadForm(true)}
-        >
-          <Ionicons name="cloud-upload-outline" size={24} color={Colors.primary} />
-          <Text style={styles.toolbarButtonText}>Upload Song</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.toolbarButton}>
-          <Ionicons name="settings-outline" size={24} color={Colors.primary} />
-          <Text style={styles.toolbarButtonText}>Settings</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.toolbarButton}>
-          <Ionicons name="save-outline" size={24} color={Colors.primary} />
-          <Text style={styles.toolbarButtonText}>Save</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.toolbarButton}>
-          <Ionicons name="share-outline" size={24} color={Colors.primary} />
-          <Text style={styles.toolbarButtonText}>Export</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Beat Library Modal */}
-      <BeatLibrary
-        isVisible={showBeatLibrary}
-        onClose={() => setShowBeatLibrary(false)}
-        onSelectBeat={handleSelectBeat}
-      />
-
-      {/* Collaboration Panel */}
-      {currentProject && (
-        <CollaborationPanel
-          projectId={currentProject.id}
-          isVisible={showCollaborationPanel}
-          onClose={() => setShowCollaborationPanel(false)}
+    <View style={[styles.container, isDark && styles.containerDark]}>
+      {activeView === 'welcome' && renderWelcomeScreen()}
+      
+      {activeView === 'record' && (
+        <RecordingInterface
+          onRecordingComplete={handleRecordingComplete}
+          onCancel={() => setActiveView('welcome')}
         />
       )}
-
-      {/* New Project Modal */}
-      <Modal
-        visible={showNewProjectModal}
-        transparent={true}
-        animationType="fade"
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContainer}>
-            <Text style={styles.modalTitle}>Create New Project</Text>
-
-            <TextInput
-              style={styles.modalInput}
-              placeholder="Project Name"
-              value={newProjectName}
-              onChangeText={setNewProjectName}
-              autoFocus
-            />
-
-            <View style={styles.modalButtons}>
-              <TouchableOpacity
-                style={[
-                  styles.modalButton,
-                  {
-                    backgroundColor: '#f5f5f5',
-                    borderWidth: 1,
-                    borderColor: '#ddd',
-                  },
-                ]}
-                onPress={() => {
-                  // If there's no current project, we can't cancel
-                  if (!currentProject) {
-                    Alert.alert(
-                      'Error',
-                      'You need to create a project to use the studio.'
-                    );
-                    return;
-                  }
-                  setShowNewProjectModal(false);
-                }}
-              >
-                <Text style={styles.cancelButtonText}>Cancel</Text>
-              </TouchableOpacity>              
-
-              <TouchableOpacity
-                style={[styles.modalButton, styles.createButton]}
-                onPress={createNewProject}
-              >
-                <Text style={styles.createButtonText}>Create</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
-
-      {/* Add Track Modal */}
-      <Modal visible={showAddTrackModal} transparent={true} animationType="fade">
-                <View style={styles.modalOverlay}>
-                    <View style={styles.modalContainer}>
-                        <Text style={styles.modalTitle}>Add New Track</Text>
-                        <View style={styles.trackSelectContainer}>
-                            <Text style={styles.trackSelectLabel}>Select Track:</Text>
-                            <Picker
-                                selectedValue={selectedTrackId}
-                                style={styles.trackSelectPicker}
-                                onValueChange={(itemValue) => setSelectedTrackId(itemValue)}
-                            >
-                                {currentProject?.tracks.map((track) => (
-                                    <Picker.Item key={track.id} label={track.name} value={track.id} />
-                                ))}
-                            </Picker>
-                        </View>
-                        <TextInput
-                            style={styles.modalInput}
-                            placeholder="Track Name"
-                            value={newTrackName}
-                            onChangeText={setNewTrackName}
-                            autoFocus
-                        />
-
-                        <View style={styles.modalButtons}>
-                            <TouchableOpacity
-                                style={[
-                                    styles.modalButton,
-                                    { backgroundColor: '#f5f5f5', borderWidth: 1, borderColor: '#ddd' },
-                                ]}
-                                onPress={() => setShowAddTrackModal(false)}
-                            >
-
-                                <Text style={styles.cancelButtonText}>Cancel</Text>
-                            </TouchableOpacity>
-
-                            <TouchableOpacity
-                                style={[styles.modalButton, styles.createButton]}
-                                onPress={addNewTrack}
-                            >
-                                <Text style={styles.createButtonText}>Add</Text>
-                            </TouchableOpacity>
-                        </View>
-                    </View>
-                </View>
-            </Modal>
-            {/* Song Upload Form Modal */}
-            <Modal
-                visible={showUploadForm}
-                transparent={true}
-                animationType="slide"
-            >
-                <View style={styles.modalOverlay}>
-                    <View style={styles.modalContainer}>
-                        <SongUploadForm
-                            onUploadComplete={async (songData) => {
-                              try {
-                                // Add the song using the mock service
-
-                                // const newSong = await SongService.addSong(songData);
-
-                                // Optionally, update the UI or show a success message
-                                console.log('Song uploaded:', newSong);
-                                Alert.alert('Success', 'Your song has been uploaded!');
-
-                                // Reload the project list to include the new song
-                                await loadCurrentProject();
-                              } catch (error) {
-                                console.error('Error uploading song:', error);
-                                Alert.alert('Upload Error', 'Failed to upload song. Please try again.');
-                              } finally {
-                                setShowUploadForm(false);
-                              }
-                            }}
-                            onCancel={() => setShowUploadForm(false)}
-                        />
-                    </View>
-                </View>
-            </Modal>
-
-      {/* Audio File Uploader Modal */}
-      {currentProject && (
-        <Modal
-          visible={showAudioFileUploader}
-          transparent={true}
-          animationType="fade"
-          onRequestClose={() => setShowAudioFileUploader(false)}
-        >
-          <View style={styles.modalOverlay}>
-            <View style={styles.audioUploaderContainer}>
-              <AudioFileUploader
-                projectId={currentProject.id}
-                trackId={uploadTargetTrackId || undefined}
-                onUploadComplete={handleAudioFileUploaded}
-                onCancel={() => {
-                  setShowAudioFileUploader(false);
-                  setUploadTargetTrackId(null);
-                }}
-              />
-            </View>
-          </View>
-        </Modal>
-      )}
-
-      {/* Audio Library Modal */}
-      {currentProject && (
-        <AudioLibrary
-          isVisible={showAudioLibrary}
-          onClose={() => setShowAudioLibrary(false)}
-          projectId={currentProject.id}
-          onSelectAudio={handleSelectAudioFromLibrary}
+      
+      {activeView === 'upload' && (
+        <TrackUploader
+          onUploadComplete={handleUploadComplete}
+          onCancel={() => setActiveView('welcome')}
         />
       )}
+      
+      {activeView === 'browse' && (
+        <TrackBrowser
+          onTrackSelect={handleTrackSelect}
+          onCancel={() => setActiveView('welcome')}
+        />
+      )}
+      
+      {activeView === 'edit' && renderAudioEditor()}
+      
+      {activeView === 'effects' && renderEffectsView()}
+      
+      {activeView === 'recording' && renderRecordingView()}
     </View>
   );
 };
 
+const { width } = Dimensions.get('window');
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
+    backgroundColor: '#FFFFFF',
   },
-  loadingContainer: {
-    flex: 1,
+  containerDark: {
+    backgroundColor: '#121212',
+  },
+  centerContent: {
     justifyContent: 'center',
     alignItems: 'center',
+    padding: 20,
   },
-  loadingText: {
-    marginTop: 10,
-    fontSize: 16,
-    color: '#666',
+  textLight: {
+    color: '#FFFFFF',
   },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 16,
-    backgroundColor: 'white',
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
-  },
-  projectInfo: {
+  
+  // Welcome screen styles
+  welcomeContainer: {
     flex: 1,
+    padding: 20,
   },
-  projectName: {
+  welcomeTitle: {
+    fontSize: 32,
+    fontWeight: 'bold',
+    color: '#000000',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  welcomeSubtitle: {
+    fontSize: 18,
+    color: '#666666',
+    textAlign: 'center',
+    marginBottom: 30,
+  },
+  optionsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-around',
+    marginBottom: 30,
+  },
+  optionButton: {
+    width: width / 2 - 30,
+    height: 100,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
+    margin: 10,
+  },
+  optionButtonText: {
+    color: '#FFFFFF',
+    marginTop: 8,
+    fontWeight: '500',
+  },
+  projectInfoContainer: {
+    width: '100%',
+    padding: 16,
+    borderRadius: 8,
+    marginTop: 20,
+  },
+  projectInfoTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#333',
+    marginBottom: 8,
   },
-  projectMeta: {
+  projectInfoDetail: {
     fontSize: 14,
-    color: '#666',
+    marginBottom: 4,
   },
-  transportControls: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  transportButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+  
+  // Auth prompt styles
+  authPrompt: {
+    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 10,
+    padding: 20,
   },
-  playButton: {
-    backgroundColor: '#4CAF50',
+  authTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#000000',
+    marginTop: 16,
+    marginBottom: 8,
   },
-  stopButton: {
-    backgroundColor: '#F44336',
-  },
-  disabledButton: {
-    opacity: 0.5,
-  },
-  timeDisplay: {
+  authDescription: {
     fontSize: 16,
-    fontWeight: '500',
-    color: '#333',
-    minWidth: 50,
+    color: '#666666',
     textAlign: 'center',
+    marginBottom: 24,
   },
-  tracksContainer: {
-    flex: 1,
-    padding: 16,
-  },
-  trackRow: {
-    backgroundColor: 'white',
+  signInButton: {
+    backgroundColor: Colors.primary,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
     borderRadius: 8,
-    marginBottom: 16,
-    padding: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 2,
   },
-  trackInfo: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  trackName: {
+  signInButtonText: {
+    color: '#FFFFFF',
     fontSize: 16,
-    fontWeight: '500',
-    color: '#333',
+    fontWeight: 'bold',
   },
-  recordingIndicator: {
-    backgroundColor: '#F44336',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 4,
-  },
-  recordingText: {
-    color: 'white',
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  trackContent: {
-    height: 80,
-    marginBottom: 12,
-    borderRadius: 4,
-    overflow: 'hidden',
-  },
-  waveformContainer: {
-    flex: 1,
-    backgroundColor: '#f0f0f0',
-    borderRadius: 4,
-  },
-  waveformPlaceholder: {
-    flex: 1,
-    backgroundColor: '#e0e0e0',
-  },
-  emptyTrackPlaceholder: {
-    flex: 1,
-    backgroundColor: '#f5f5f5',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderRadius: 4,
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
-    borderStyle: 'dashed',
-  },
-  emptyTrackText: {
-    color: '#999',
-    fontSize: 14,
-  },
-  trackControls: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-  },
-    volumeInput: {
-        width: 40,
-        height: 30,
-        borderWidth: 1,
-        borderColor: '#ccc',
-        borderRadius: 4,
-        paddingHorizontal: 4,
-        fontSize: 12,
-        textAlign: 'center',
-        marginLeft: 8
-    },
-  recordButton: {
-    backgroundColor: '#F44336',
-  },
-  stopRecordingButton: {
-    backgroundColor: '#F44336',
-  },
-  deleteButton: {
-    backgroundColor: '#757575',
-  },
-  emptyTracksContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 40,
-  },
-  emptyTracksText: {
+  
+  // Loading and error styles
+  loadingText: {
     fontSize: 18,
-    fontWeight: '500',
-    color: '#666',
+    color: '#000000',
     marginTop: 16,
   },
-  emptyTracksSubtext: {
-    fontSize: 14,
-    color: '#999',
-    marginTop: 8,
+  errorTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#000000',
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  errorMessage: {
+    fontSize: 16,
+    color: '#666666',
     textAlign: 'center',
+    marginBottom: 24,
   },
-  toolbarButton: {
+  retryButton: {
+    backgroundColor: Colors.primary,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+  },
+  retryButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  
+  // Editor styles
+  editorContainer: {
+    flex: 1,
+    padding: 20,
+  },
+  waveformContainer: {
+    position: 'relative',
+    width: '100%',
+    height: 120,
+    marginVertical: 20,
+    borderRadius: 10,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(0,0,0,0.05)',
+  },
+  waveform: {
+    width: '100%',
+    height: '100%',
+  },
+  positionIndicator: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    pointerEvents: 'none',
+  },
+  positionLine: {
+    position: 'absolute',
+    top: 0,
+    width: 2,
+    height: '100%',
+    backgroundColor: '#007AFF',
+  },
+  controlsRow: {
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 20,
+    paddingHorizontal: 10,
   },
-  toolbarButtonText: {
-    marginTop: 4,
-    fontSize: 12,
-    color: Colors.primary,
+  playButton: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#007AFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
   },
-  toolbar: {
+  pauseButton: {
+    backgroundColor: '#FF9500',
+  },
+  timeText: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  trackInfoContainer: {
+    marginBottom: 20,
+  },
+  input: {
+    width: '100%',
+    height: 44,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    marginBottom: 12,
+    fontSize: 16,
+  },
+  actionsRow: {
     flexDirection: 'row',
     justifyContent: 'space-around',
+    marginTop: 20,
+  },
+  actionButton: {
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 8,
+    minWidth: 100,
+  },
+  actionButtonText: {
+    color: 'white',
+    fontWeight: '600',
+    marginLeft: 6,
+  },
+  errorContainer: {
+    backgroundColor: '#FFEBEE',
     padding: 10,
-    backgroundColor: 'white',
-    borderTopWidth: 1,
-    borderTopColor: '#eee',
-  
+    borderRadius: 8,
+    marginTop: 20,
   },
-  // Modal styles
-  modalOverlay: {
-      flex: 1,
-      justifyContent: 'center',
-      alignItems: 'center',
-      backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  errorText: {
+    color: '#D32F2F',
+    fontSize: 14,
   },
-  modalContainer: {
-      backgroundColor: 'white',
-      padding: 20,
-      borderRadius: 10,
-      width: '80%',
-      maxWidth: 400,
+  sectionTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    marginBottom: 8,
   },
-  modalTitle: {
-      fontSize: 18,
-      fontWeight: 'bold',
-      marginBottom: 20,
-      color: '#333',
+  sectionDescription: {
+    fontSize: 16,
+    marginBottom: 20,
   },
-  modalInput: {
-      borderWidth: 1,
-      borderColor: '#ccc',
-      borderRadius: 5,
-      padding: 10,
-      marginBottom: 20,
-  },
-  modalButtons: {
-      flexDirection: 'row',
-      justifyContent: 'flex-end',
-  },
-  modalButton: {
-      paddingVertical: 10,
-      paddingHorizontal: 20,
-      borderRadius: 5,
-      marginLeft: 10,
-  },
-  cancelButtonText: {
-      color: '#333',
-      fontWeight: 'bold',
-  },
-  createButton: {
-      backgroundColor: Colors.primary,
-  },
-  createButtonText: {
-      color: 'white',
-      fontWeight: 'bold',
-  },
-  trackSelectContainer: {
-      marginBottom: 20,
-  },
-  trackSelectLabel: {
-      fontSize: 16,
-      marginBottom: 10,
-      color: '#333',
-  },
-  trackSelectPicker: {
-    height: 50,
-      width: '100%',
-    borderWidth: 1,
-    borderColor: '#ccc',
-  },
-  uploadButton: {
-    backgroundColor: '#4a90e2',
-  },
-  audioUploaderContainer: {
-    width: '90%',
-    maxWidth: 600,
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    overflow: 'hidden',
-  },
-  trackButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+  emptyStateContainer: {
+    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    marginLeft: 8,
+  },
+  emptyStateText: {
+    fontSize: 16,
+    color: '#666666',
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  buttonRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 20,
+  },
+  backButton: {
+    padding: 15,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginTop: 20,
+    flex: 1,
+    marginHorizontal: 5,
+  },
+  backButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  effectsScrollView: {
+    flex: 1,
+  },
+  effectsScrollContent: {
+    padding: 20,
+  },
+  recordingContainer: {
+    flex: 1,
+    padding: 20,
   },
 });
+
+export default StudioInterface;
+
+
+

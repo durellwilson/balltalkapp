@@ -6,7 +6,8 @@ import {
   deleteObject,
   getMetadata,
   updateMetadata,
-  FirebaseStorage
+  FirebaseStorage,
+  uploadBytesResumable
 } from 'firebase/storage';
 import { 
   doc, 
@@ -23,11 +24,14 @@ import {
   Timestamp,
   deleteDoc,
   Firestore,
-  FieldValue
+  limit,
+  startAfter
 } from 'firebase/firestore';
-import { db, storage } from '../src/lib/firebase';
+import { db, storage } from '../config/firebase';
 import { Platform } from 'react-native';
 import storage_lib from '@react-native-firebase/storage';
+import * as FileSystem from 'expo-file-system';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Properly type the Firebase services
 const firebaseDb: Firestore = db as Firestore;
@@ -37,6 +41,8 @@ const firebaseStorage: FirebaseStorage = storage as FirebaseStorage;
 const AUDIO_FILES_COLLECTION = 'audioFiles';
 const PROJECTS_COLLECTION = 'projects';
 const STREAMING_TRACKS_COLLECTION = 'streamingTracks';
+const SONGS_COLLECTION = 'songs';
+const PENDING_UPLOADS_COLLECTION = 'pendingUploads';
 
 // Audio file metadata interface
 export interface AudioFileMetadata {
@@ -70,33 +76,47 @@ export interface AudioFileMetadata {
   }[];
 }
 
-// Streaming track interface
-export interface StreamingTrack {
+// Song interface
+export interface Song {
   id: string;
-  title: string;
-  artist: string;
   artistId: string;
-  coverArt?: string;
-  audioFileId: string;
-  streamingUrl: string;
-  duration: number;
-  playCount: number;
-  likeCount: number;
-  commentCount: number;
-  isPublic: boolean;
-  releaseDate: Timestamp | string | any; // Allow any to accommodate serverTimestamp
+  title: string;
   genre?: string;
-  tags?: string[];
+  releaseDate: string;
+  fileUrl: string;
+  coverArtUrl?: string;
+  duration: number;
+  visibility: 'public' | 'private' | 'unlisted';
+  createdAt: string;
+  updatedAt: string;
+  plays?: number;
+  likes?: number;
+  comments?: number;
   description?: string;
   lyrics?: string;
-  collaborators?: {
-    userId: string;
-    displayName: string;
-    role: string;
-  }[];
-  albumId?: string;
-  albumName?: string;
-  trackNumber?: number;
+  tags?: string[];
+  audioFileId?: string;
+  isProcessed?: boolean;
+  processingStatus?: 'pending' | 'processing' | 'completed' | 'failed';
+}
+
+// Pending upload interface
+export interface PendingUpload {
+  id: string;
+  userId: string;
+  fileName: string;
+  fileUri: string;
+  fileSize: number;
+  mimeType: string;
+  title?: string;
+  genre?: string;
+  isPublic: boolean;
+  tags?: string[];
+  createdAt: string;
+  status: 'pending' | 'uploading' | 'failed';
+  error?: string;
+  retryCount: number;
+  lastRetryAt?: string;
 }
 
 class AudioStorageService {
@@ -143,56 +163,43 @@ class AudioStorageService {
       console.log(`[AudioStorageService] Storage path: ${storagePath}`);
       
       // Create a reference to the file in Firebase Storage
-      const storageRef = ref(firebaseStorage, storagePath);
-      let uploadTask;
+      const storageRef = ref(storage, storagePath);
       
+      // Upload the file based on platform
       // For web platform
       if (Platform.OS === 'web') {
         try {
-          console.log('[AudioStorageService] Uploading on web platform');
-          // Fetch the file as a blob
+          console.log(`[AudioStorageService] Uploading on web platform`);
           const response = await fetch(fileUri);
           const blob = await response.blob();
           
-          if (onProgress) onProgress(10); // Started fetching
-          
-          console.log(`[AudioStorageService] Blob created: ${blob.size} bytes`);
-          
-          // Create upload task
-          uploadTask = uploadBytes(storageRef, blob);
-          
-          // Handle progress if callback provided
           if (onProgress) {
-            let progress = 10;
-            const interval = setInterval(() => {
-              progress += 5;
-              if (progress >= 90) {
-                clearInterval(interval);
-              } else {
+            // Use resumable upload for progress tracking
+            const uploadTask = uploadBytesResumable(storageRef, blob);
+            
+            uploadTask.on('state_changed', 
+              (snapshot) => {
+                const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
                 onProgress(progress);
                 console.log(`[AudioStorageService] Upload progress: ${progress}%`);
+              },
+              (error) => {
+                console.error(`[AudioStorageService] Upload error:`, error);
+                throw error;
               }
-            }, 200);
+            );
             
-            // Clear interval when upload completes
-            uploadTask.then(() => {
-              clearInterval(interval);
-              onProgress(95);
-              console.log('[AudioStorageService] Upload completed');
-            }).catch((error) => {
-              clearInterval(interval);
-              console.error('[AudioStorageService] Upload error:', error);
-            });
+            // Wait for upload to complete
+            await uploadTask;
+          } else {
+            // Use simple upload without progress tracking
+            await uploadBytes(storageRef, blob);
           }
-          
-          // Wait for upload to complete
-          await uploadTask;
-          if (onProgress) onProgress(100);
         } catch (webError) {
-          console.error('[AudioStorageService] Web upload error:', webError);
+          console.error(`[AudioStorageService] Web upload error:`, webError);
           throw webError;
         }
-      } 
+      }
       // For native platforms
       else {
         try {
@@ -234,39 +241,42 @@ class AudioStorageService {
       // Determine file format from extension
       const format = fileExtension.toUpperCase();
       
-      // Create metadata document in Firestore
-      const audioFileData: Omit<AudioFileMetadata, 'id'> = {
+      // Create metadata object
+      const metadata: AudioFileMetadata = {
+        id: '', // Will be set after Firestore document is created
         fileName: uniqueFileName,
         originalFileName: fileName,
-        fileSize: fileSize,
-        duration: duration,
-        format: format,
-        mimeType: mimeType,
+        fileSize,
+        duration,
+        format,
+        mimeType,
         uploadedBy: userId,
         uploadedAt: serverTimestamp(),
-        projectId: projectId,
-        trackId: trackId,
-        isPublic: isPublic,
+        isPublic,
         streamingUrl: streamingURL,
         downloadUrl: downloadURL,
-        tags: tags,
+        tags: tags || [],
         transcoded: false,
-        transcodingStatus: 'completed', // Mark as completed for immediate playback
-        waveformData: [], // Add empty waveform data (could be generated later)
+        transcodingStatus: 'pending',
       };
       
-      // Add document to Firestore
-      const docRef = await addDoc(collection(firebaseDb, AUDIO_FILES_COLLECTION), audioFileData);
+      // Add project and track IDs if provided
+      if (projectId) metadata.projectId = projectId;
+      if (trackId) metadata.trackId = trackId;
       
-      // If this is for a project track, update the track with the audio file ID
-      if (projectId && trackId) {
-        await this.updateProjectTrackAudio(projectId, trackId, downloadURL, docRef.id);
-      }
+      // Save metadata to Firestore
+      console.log('[AudioStorageService] Saving metadata to Firestore');
+      const docRef = await addDoc(collection(db, AUDIO_FILES_COLLECTION), metadata);
       
-      // Return the complete metadata with the ID
+      // Update the metadata with the document ID
+      metadata.id = docRef.id;
+      await updateDoc(docRef, { id: docRef.id });
+      
+      console.log(`[AudioStorageService] Audio file uploaded successfully with ID: ${docRef.id}`);
+      
       return {
-        id: docRef.id,
-        ...audioFileData,
+        ...metadata,
+        id: docRef.id
       };
     } catch (error) {
       console.error('[AudioStorageService] Error uploading audio file:', error);
@@ -275,335 +285,466 @@ class AudioStorageService {
   }
   
   /**
-   * Update a project track with audio file information
+   * Upload a song with metadata and audio file
    */
-  async updateProjectTrackAudio(
-    projectId: string, 
-    trackId: string, 
-    audioUrl: string, 
-    audioFileId: string
-  ): Promise<void> {
+  async uploadSong(
+    artistId: string,
+    title: string,
+    genre: string,
+    audioFile: Blob | File,
+    coverArt?: Blob | File,
+    songData: Partial<Song> = {},
+    onProgress?: (progress: number) => void
+  ): Promise<Song | null> {
     try {
-      console.log(`[AudioStorageService] Updating track ${trackId} with audio file ${audioFileId}`);
+      const songId = `song_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
+      const now = new Date().toISOString();
       
-      // Get the project document reference
-      const projectRef = doc(firebaseDb, PROJECTS_COLLECTION, projectId);
+      // Upload audio file to storage
+      const audioRef = ref(storage, `songs/${artistId}/${songId}/audio.mp3`);
       
-      // Get the current project data
-      const projectDoc = await getDoc(projectRef);
-      
-      if (!projectDoc.exists()) {
-        throw new Error(`Project ${projectId} not found`);
+      if (onProgress) {
+        // Use resumable upload for progress tracking
+        const uploadTask = uploadBytesResumable(audioRef, audioFile);
+        
+        uploadTask.on('state_changed', 
+          (snapshot) => {
+            const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+            onProgress(progress);
+            console.log(`[AudioStorageService] Song upload progress: ${progress}%`);
+          },
+          (error) => {
+            console.error(`[AudioStorageService] Song upload error:`, error);
+            throw error;
+          }
+        );
+        
+        // Wait for upload to complete
+        await uploadTask;
+      } else {
+        // Use simple upload without progress tracking
+        await uploadBytes(audioRef, audioFile);
       }
       
-      const projectData = projectDoc.data();
+      const fileUrl = await getDownloadURL(audioRef);
       
-      // Find the track and update its audio URI
-      const updatedTracks = projectData.tracks.map(track => {
-        if (track.id === trackId) {
-          return {
-            ...track,
-            audioUri: audioUrl,
-            audioFileId: audioFileId,
-            updatedAt: new Date().toISOString()
-          };
-        }
-        return track;
-      });
+      // Upload cover art if provided
+      let coverArtUrl = '';
+      if (coverArt) {
+        const coverArtRef = ref(storage, `songs/${artistId}/${songId}/cover.jpg`);
+        await uploadBytes(coverArtRef, coverArt);
+        coverArtUrl = await getDownloadURL(coverArtRef);
+      }
       
-      // Update the project with the modified tracks
-      await updateDoc(projectRef, {
-        tracks: updatedTracks,
-        updatedAt: serverTimestamp()
-      });
+      // Create song object
+      const newSong: Song = {
+        id: songId,
+        artistId,
+        title,
+        genre,
+        releaseDate: now,
+        fileUrl,
+        duration: 0, // This would be calculated from the audio file
+        visibility: 'public',
+        createdAt: now,
+        updatedAt: now,
+        plays: 0,
+        likes: 0,
+        comments: 0,
+        isProcessed: false,
+        processingStatus: 'pending',
+        ...(coverArtUrl && { coverArtUrl }),
+        ...songData
+      };
       
-      console.log(`[AudioStorageService] Track ${trackId} updated successfully`);
+      // Save to Firestore
+      await setDoc(doc(db, SONGS_COLLECTION, songId), newSong);
+      
+      console.log(`[AudioStorageService] Song uploaded successfully with ID: ${songId}`);
+      return newSong;
     } catch (error) {
-      console.error('[AudioStorageService] Error updating track audio:', error);
+      console.error('[AudioStorageService] Error uploading song:', error);
       throw error;
     }
   }
   
   /**
-   * Get audio file metadata by ID
+   * Get songs by artist
    */
-  async getAudioFileMetadata(audioFileId: string): Promise<AudioFileMetadata | null> {
+  async getSongsByArtist(artistId: string, limitCount: number = 20, startAfterDoc?: any): Promise<{ songs: Song[], lastDoc: any }> {
     try {
-      const docRef = doc(firebaseDb, AUDIO_FILES_COLLECTION, audioFileId);
-      const docSnap = await getDoc(docRef);
+      let songsQuery;
       
-      if (docSnap.exists()) {
-        return {
-          id: docSnap.id,
-          ...docSnap.data()
-        } as AudioFileMetadata;
+      if (startAfterDoc) {
+        songsQuery = query(
+          collection(db, SONGS_COLLECTION),
+          where('artistId', '==', artistId),
+          orderBy('createdAt', 'desc'),
+          startAfter(startAfterDoc),
+          limit(limitCount)
+        );
+      } else {
+        songsQuery = query(
+          collection(db, SONGS_COLLECTION),
+          where('artistId', '==', artistId),
+          orderBy('createdAt', 'desc'),
+          limit(limitCount)
+        );
+      }
+      
+      const querySnapshot = await getDocs(songsQuery);
+      const songs: Song[] = [];
+      let lastDoc = null;
+      
+      querySnapshot.forEach((doc) => {
+        songs.push(doc.data() as Song);
+        lastDoc = doc;
+      });
+      
+      return { songs, lastDoc };
+    } catch (error) {
+      console.error('[AudioStorageService] Error getting songs by artist:', error);
+      throw error;
+    }
+  }
+  
+  /**
+   * Get public songs
+   */
+  async getPublicSongs(limitCount: number = 20, startAfterDoc?: any): Promise<{ songs: Song[], lastDoc: any }> {
+    try {
+      let songsQuery;
+      
+      if (startAfterDoc) {
+        songsQuery = query(
+          collection(db, SONGS_COLLECTION),
+          where('visibility', '==', 'public'),
+          orderBy('createdAt', 'desc'),
+          startAfter(startAfterDoc),
+          limit(limitCount)
+        );
+      } else {
+        songsQuery = query(
+          collection(db, SONGS_COLLECTION),
+          where('visibility', '==', 'public'),
+          orderBy('createdAt', 'desc'),
+          limit(limitCount)
+        );
+      }
+      
+      const querySnapshot = await getDocs(songsQuery);
+      const songs: Song[] = [];
+      let lastDoc = null;
+      
+      querySnapshot.forEach((doc) => {
+        songs.push(doc.data() as Song);
+        lastDoc = doc;
+      });
+      
+      return { songs, lastDoc };
+    } catch (error) {
+      console.error('[AudioStorageService] Error getting public songs:', error);
+      throw error;
+    }
+  }
+  
+  /**
+   * Get song by ID
+   */
+  async getSongById(songId: string): Promise<Song | null> {
+    try {
+      const songDoc = await getDoc(doc(db, SONGS_COLLECTION, songId));
+      
+      if (songDoc.exists()) {
+        return songDoc.data() as Song;
       }
       
       return null;
     } catch (error) {
-      console.error('[AudioStorageService] Error getting audio file metadata:', error);
+      console.error(`[AudioStorageService] Error getting song with ID ${songId}:`, error);
       throw error;
     }
   }
   
   /**
-   * Get all audio files for a user
+   * Delete song
    */
-  async getUserAudioFiles(userId: string): Promise<AudioFileMetadata[]> {
+  async deleteSong(songId: string, artistId: string): Promise<boolean> {
     try {
-      const q = query(
-        collection(firebaseDb, AUDIO_FILES_COLLECTION),
-        where('uploadedBy', '==', userId),
-        orderBy('uploadedAt', 'desc')
-      );
+      // Get the song to check ownership
+      const songDoc = await getDoc(doc(db, SONGS_COLLECTION, songId));
       
-      const querySnapshot = await getDocs(q);
-      const audioFiles: AudioFileMetadata[] = [];
-      
-      querySnapshot.forEach(doc => {
-        audioFiles.push({
-          id: doc.id,
-          ...doc.data()
-        } as AudioFileMetadata);
-      });
-      
-      return audioFiles;
-    } catch (error) {
-      console.error('[AudioStorageService] Error getting user audio files:', error);
-      throw error;
-    }
-  }
-  
-  /**
-   * Get all audio files for a project
-   */
-  async getProjectAudioFiles(projectId: string): Promise<AudioFileMetadata[]> {
-    try {
-      const q = query(
-        collection(firebaseDb, AUDIO_FILES_COLLECTION),
-        where('projectId', '==', projectId),
-        orderBy('uploadedAt', 'desc')
-      );
-      
-      const querySnapshot = await getDocs(q);
-      const audioFiles: AudioFileMetadata[] = [];
-      
-      querySnapshot.forEach(doc => {
-        audioFiles.push({
-          id: doc.id,
-          ...doc.data()
-        } as AudioFileMetadata);
-      });
-      
-      return audioFiles;
-    } catch (error) {
-      console.error('[AudioStorageService] Error getting project audio files:', error);
-      throw error;
-    }
-  }
-  
-  /**
-   * Delete an audio file
-   */
-  async deleteAudioFile(audioFileId: string): Promise<void> {
-    try {
-      // Get the audio file metadata
-      const audioFile = await this.getAudioFileMetadata(audioFileId);
-      
-      if (!audioFile) {
-        throw new Error(`Audio file ${audioFileId} not found`);
+      if (!songDoc.exists()) {
+        throw new Error(`Song with ID ${songId} not found`);
       }
       
-      // Delete the file from storage
-      const storageRef = ref(firebaseStorage, audioFile.fileName);
-      await deleteObject(storageRef);
+      const song = songDoc.data() as Song;
       
-      // Delete the metadata document
-      await deleteDoc(doc(firebaseDb, AUDIO_FILES_COLLECTION, audioFileId));
+      // Check if the user is the owner of the song
+      if (song.artistId !== artistId) {
+        throw new Error('You do not have permission to delete this song');
+      }
       
-      console.log(`[AudioStorageService] Audio file ${audioFileId} deleted successfully`);
+      // Delete audio file from storage
+      const audioRef = ref(storage, `songs/${artistId}/${songId}/audio.mp3`);
+      await deleteObject(audioRef);
+      
+      // Delete cover art if it exists
+      if (song.coverArtUrl) {
+        const coverArtRef = ref(storage, `songs/${artistId}/${songId}/cover.jpg`);
+        await deleteObject(coverArtRef);
+      }
+      
+      // Delete song document from Firestore
+      await deleteDoc(doc(db, SONGS_COLLECTION, songId));
+      
+      console.log(`[AudioStorageService] Song with ID ${songId} deleted successfully`);
+      return true;
     } catch (error) {
-      console.error('[AudioStorageService] Error deleting audio file:', error);
+      console.error(`[AudioStorageService] Error deleting song with ID ${songId}:`, error);
       throw error;
     }
   }
   
   /**
-   * Create a streaming track from an audio file
+   * Store a pending upload for offline support
    */
-  async createStreamingTrack(
-    audioFileId: string,
-    title: string,
-    artist: string,
-    artistId: string,
-    coverArt?: string,
-    isPublic: boolean = true,
+  async storePendingUpload(
+    userId: string,
+    fileUri: string,
+    fileName: string,
+    fileSize: number,
+    mimeType: string,
+    title?: string,
     genre?: string,
-    tags: string[] = [],
-    description?: string,
-    lyrics?: string,
-    collaborators: { userId: string, displayName: string, role: string }[] = []
-  ): Promise<StreamingTrack | null> {
+    isPublic: boolean = false,
+    tags: string[] = []
+  ): Promise<string> {
     try {
-      // Get the audio file metadata
-      const audioFile = await this.getAudioFileMetadata(audioFileId);
+      const uploadId = `upload_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
+      const now = new Date().toISOString();
       
-      if (!audioFile) {
-        throw new Error(`Audio file ${audioFileId} not found`);
-      }
-      
-      // Create the streaming track document
-      const streamingTrackData: Omit<StreamingTrack, 'id'> = {
+      // Create pending upload object
+      const pendingUpload: PendingUpload = {
+        id: uploadId,
+        userId,
+        fileName,
+        fileUri,
+        fileSize,
+        mimeType,
         title,
-        artist,
-        artistId,
-        coverArt,
-        audioFileId,
-        streamingUrl: audioFile.streamingUrl,
-        duration: audioFile.duration,
-        playCount: 0,
-        likeCount: 0,
-        commentCount: 0,
-        isPublic,
-        releaseDate: serverTimestamp(),
         genre,
+        isPublic,
         tags,
-        description,
-        lyrics,
-        collaborators
+        createdAt: now,
+        status: 'pending',
+        retryCount: 0
       };
       
-      // Add document to Firestore
-      const docRef = await addDoc(collection(firebaseDb, STREAMING_TRACKS_COLLECTION), streamingTrackData);
+      // Store in AsyncStorage for offline support
+      await AsyncStorage.setItem(`pendingUpload_${uploadId}`, JSON.stringify(pendingUpload));
       
-      // Update the audio file to mark it as public if the track is public
-      if (isPublic && !audioFile.isPublic) {
-        await updateDoc(doc(firebaseDb, AUDIO_FILES_COLLECTION, audioFileId), {
-          isPublic: true
+      // Also store in Firestore if online
+      try {
+        await setDoc(doc(db, PENDING_UPLOADS_COLLECTION, uploadId), {
+          ...pendingUpload,
+          createdAt: serverTimestamp()
         });
+      } catch (firestoreError) {
+        console.warn('[AudioStorageService] Could not store pending upload in Firestore, will sync later:', firestoreError);
       }
       
-      // Return the complete streaming track with the ID
-      return {
-        id: docRef.id,
-        ...streamingTrackData
-      };
+      console.log(`[AudioStorageService] Pending upload stored with ID: ${uploadId}`);
+      return uploadId;
     } catch (error) {
-      console.error('[AudioStorageService] Error creating streaming track:', error);
+      console.error('[AudioStorageService] Error storing pending upload:', error);
       throw error;
     }
   }
   
   /**
-   * Get all streaming tracks for a user
+   * Get all pending uploads for a user
    */
-  async getUserStreamingTracks(userId: string): Promise<StreamingTrack[]> {
+  async getPendingUploads(userId: string): Promise<PendingUpload[]> {
     try {
-      const q = query(
-        collection(firebaseDb, STREAMING_TRACKS_COLLECTION),
-        where('artistId', '==', userId),
-        orderBy('releaseDate', 'desc')
-      );
-      
-      const querySnapshot = await getDocs(q);
-      const streamingTracks: StreamingTrack[] = [];
-      
-      querySnapshot.forEach(doc => {
-        streamingTracks.push({
-          id: doc.id,
-          ...doc.data()
-        } as StreamingTrack);
-      });
-      
-      return streamingTracks;
-    } catch (error) {
-      console.error('[AudioStorageService] Error getting user streaming tracks:', error);
-      throw error;
-    }
-  }
-  
-  /**
-   * Get public streaming tracks
-   */
-  async getPublicStreamingTracks(limit: number = 20): Promise<StreamingTrack[]> {
-    try {
-      const q = query(
-        collection(firebaseDb, STREAMING_TRACKS_COLLECTION),
-        where('isPublic', '==', true),
-        orderBy('releaseDate', 'desc'),
-        // limit(limit)
-      );
-      
-      const querySnapshot = await getDocs(q);
-      const streamingTracks: StreamingTrack[] = [];
-      
-      querySnapshot.forEach(doc => {
-        streamingTracks.push({
-          id: doc.id,
-          ...doc.data()
-        } as StreamingTrack);
-      });
-      
-      return streamingTracks;
-    } catch (error) {
-      console.error('[AudioStorageService] Error getting public streaming tracks:', error);
-      throw error;
-    }
-  }
-  
-  /**
-   * Subscribe to real-time updates for a project's audio files
-   */
-  subscribeToProjectAudioFiles(
-    projectId: string, 
-    callback: (audioFiles: AudioFileMetadata[]) => void
-  ): () => void {
-    const q = query(
-      collection(firebaseDb, AUDIO_FILES_COLLECTION),
-      where('projectId', '==', projectId),
-      orderBy('uploadedAt', 'desc')
-    );
-    
-    const unsubscribe = onSnapshot(q, (querySnapshot) => {
-      const audioFiles: AudioFileMetadata[] = [];
-      
-      querySnapshot.forEach(doc => {
-        audioFiles.push({
-          id: doc.id,
-          ...doc.data()
-        } as AudioFileMetadata);
-      });
-      
-      callback(audioFiles);
-    }, (error) => {
-      console.error('[AudioStorageService] Error subscribing to project audio files:', error);
-    });
-    
-    return unsubscribe;
-  }
-  
-  /**
-   * Increment play count for a streaming track
-   */
-  async incrementPlayCount(trackId: string): Promise<void> {
-    try {
-      const trackRef = doc(firebaseDb, STREAMING_TRACKS_COLLECTION, trackId);
-      
-      // Get the current track data
-      const trackDoc = await getDoc(trackRef);
-      
-      if (!trackDoc.exists()) {
-        throw new Error(`Track ${trackId} not found`);
+      // Try to get from Firestore first
+      try {
+        const pendingUploadsQuery = query(
+          collection(db, PENDING_UPLOADS_COLLECTION),
+          where('userId', '==', userId),
+          where('status', '==', 'pending')
+        );
+        
+        const querySnapshot = await getDocs(pendingUploadsQuery);
+        const pendingUploads: PendingUpload[] = [];
+        
+        querySnapshot.forEach((doc) => {
+          pendingUploads.push(doc.data() as PendingUpload);
+        });
+        
+        return pendingUploads;
+      } catch (firestoreError) {
+        console.warn('[AudioStorageService] Could not get pending uploads from Firestore, falling back to AsyncStorage:', firestoreError);
       }
       
-      const trackData = trackDoc.data();
+      // Fall back to AsyncStorage
+      const keys = await AsyncStorage.getAllKeys();
+      const pendingUploadKeys = keys.filter(key => key.startsWith('pendingUpload_'));
       
-      // Increment the play count
-      await updateDoc(trackRef, {
-        playCount: (trackData.playCount || 0) + 1
+      if (pendingUploadKeys.length === 0) {
+        return [];
+      }
+      
+      const pendingUploadValues = await AsyncStorage.multiGet(pendingUploadKeys);
+      const pendingUploads: PendingUpload[] = [];
+      
+      pendingUploadValues.forEach(([key, value]) => {
+        if (value) {
+          const pendingUpload = JSON.parse(value) as PendingUpload;
+          
+          if (pendingUpload.userId === userId && pendingUpload.status === 'pending') {
+            pendingUploads.push(pendingUpload);
+          }
+        }
       });
+      
+      return pendingUploads;
     } catch (error) {
-      console.error('[AudioStorageService] Error incrementing play count:', error);
+      console.error('[AudioStorageService] Error getting pending uploads:', error);
+      throw error;
+    }
+  }
+  
+  /**
+   * Process pending uploads
+   */
+  async processPendingUploads(userId: string, onProgress?: (uploadId: string, progress: number) => void): Promise<{ success: string[], failed: string[] }> {
+    try {
+      const pendingUploads = await this.getPendingUploads(userId);
+      
+      if (pendingUploads.length === 0) {
+        return { success: [], failed: [] };
+      }
+      
+      const successfulUploads: string[] = [];
+      const failedUploads: string[] = [];
+      
+      for (const pendingUpload of pendingUploads) {
+        try {
+          // Update status to uploading
+          await this.updatePendingUploadStatus(pendingUpload.id, 'uploading');
+          
+          // Check if file still exists
+          if (Platform.OS !== 'web') {
+            const fileInfo = await FileSystem.getInfoAsync(pendingUpload.fileUri);
+            
+            if (!fileInfo.exists) {
+              throw new Error(`File no longer exists at ${pendingUpload.fileUri}`);
+            }
+          }
+          
+          // Upload the file
+          await this.uploadAudioFile(
+            pendingUpload.userId,
+            pendingUpload.fileUri,
+            pendingUpload.fileName,
+            pendingUpload.fileSize,
+            0, // Duration unknown at this point
+            pendingUpload.mimeType,
+            undefined, // No project ID
+            undefined, // No track ID
+            pendingUpload.isPublic,
+            pendingUpload.tags,
+            progress => {
+              if (onProgress) {
+                onProgress(pendingUpload.id, progress);
+              }
+            }
+          );
+          
+          // Delete the pending upload
+          await this.deletePendingUpload(pendingUpload.id);
+          
+          successfulUploads.push(pendingUpload.id);
+        } catch (uploadError) {
+          console.error(`[AudioStorageService] Error processing pending upload ${pendingUpload.id}:`, uploadError);
+          
+          // Update status to failed
+          await this.updatePendingUploadStatus(
+            pendingUpload.id, 
+            'failed', 
+            uploadError instanceof Error ? uploadError.message : 'Unknown error'
+          );
+          
+          failedUploads.push(pendingUpload.id);
+        }
+      }
+      
+      return { success: successfulUploads, failed: failedUploads };
+    } catch (error) {
+      console.error('[AudioStorageService] Error processing pending uploads:', error);
+      throw error;
+    }
+  }
+  
+  /**
+   * Update pending upload status
+   */
+  private async updatePendingUploadStatus(uploadId: string, status: 'pending' | 'uploading' | 'failed', error?: string): Promise<void> {
+    try {
+      // Update in AsyncStorage
+      const pendingUploadJson = await AsyncStorage.getItem(`pendingUpload_${uploadId}`);
+      
+      if (pendingUploadJson) {
+        const pendingUpload = JSON.parse(pendingUploadJson) as PendingUpload;
+        
+        pendingUpload.status = status;
+        
+        if (status === 'failed' && error) {
+          pendingUpload.error = error;
+          pendingUpload.retryCount += 1;
+          pendingUpload.lastRetryAt = new Date().toISOString();
+        }
+        
+        await AsyncStorage.setItem(`pendingUpload_${uploadId}`, JSON.stringify(pendingUpload));
+      }
+      
+      // Update in Firestore if possible
+      try {
+        const updateData: any = { status };
+        
+        if (status === 'failed' && error) {
+          updateData.error = error;
+          updateData.retryCount = increment(1);
+          updateData.lastRetryAt = serverTimestamp();
+        }
+        
+        await updateDoc(doc(db, PENDING_UPLOADS_COLLECTION, uploadId), updateData);
+      } catch (firestoreError) {
+        console.warn('[AudioStorageService] Could not update pending upload status in Firestore:', firestoreError);
+      }
+    } catch (error) {
+      console.error(`[AudioStorageService] Error updating pending upload status for ${uploadId}:`, error);
+      throw error;
+    }
+  }
+  
+  /**
+   * Delete pending upload
+   */
+  private async deletePendingUpload(uploadId: string): Promise<void> {
+    try {
+      // Delete from AsyncStorage
+      await AsyncStorage.removeItem(`pendingUpload_${uploadId}`);
+      
+      // Delete from Firestore if possible
+      try {
+        await deleteDoc(doc(db, PENDING_UPLOADS_COLLECTION, uploadId));
+      } catch (firestoreError) {
+        console.warn('[AudioStorageService] Could not delete pending upload from Firestore:', firestoreError);
+      }
+    } catch (error) {
+      console.error(`[AudioStorageService] Error deleting pending upload ${uploadId}:`, error);
       throw error;
     }
   }
