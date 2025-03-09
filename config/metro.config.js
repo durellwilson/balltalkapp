@@ -40,4 +40,29 @@ config.server = {
   },
 };
 
+// Add specific configuration for Expo Router
+config.resolver.resolveRequest = (context, moduleName, platform) => {
+  // First, let Metro try to resolve it normally
+  const defaultResolve = context.resolveRequest;
+  if (defaultResolve) {
+    try {
+      return defaultResolve(context, moduleName, platform);
+    } catch (error) {
+      // If it fails, we'll try our custom resolution
+      console.log(`Failed to resolve ${moduleName}, trying custom resolution`);
+    }
+  }
+
+  // Special handling for expo-router/entry
+  if (moduleName === 'expo-router/entry') {
+    return {
+      type: 'sourceFile',
+      filePath: path.resolve(projectRoot, 'node_modules/expo-router/entry.js'),
+    };
+  }
+
+  // Let Metro handle the default case
+  return undefined;
+};
+
 module.exports = config; 

@@ -9,6 +9,7 @@
     "web": "expo start --web --port 9003",
     "clear-cache": "expo start --clear",
     "web-clear": "expo start --web --port 9003 --clear",
+    "web-fix": "node ./scripts/fix-web.js",
     "start:tunnel": "expo start --tunnel",
     "start:clear:tunnel": "expo start --clear --tunnel",
     "start:emulators": "node ./scripts/start-with-emulators.js",
