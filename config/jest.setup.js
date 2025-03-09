@@ -333,7 +333,7 @@ jest.mock('react-native-reanimated', () => {
 });
 
 // Mock the useTheme hook
-jest.mock('./hooks/useTheme', () => ({
+jest.mock('../hooks/useTheme', () => ({
   useTheme: () => ({
     theme: {
       primary: '#007AFF',
