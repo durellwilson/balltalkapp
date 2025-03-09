@@ -30,6 +30,8 @@ config.resolver.extraNodeModules = {
   // Add explicit resolution for expo-router
   'expo-router': path.resolve(projectRoot, 'node_modules/expo-router'),
   'expo-router/entry': path.resolve(projectRoot, 'node_modules/expo-router/entry.js'),
+  // Add fallback components path
+  '../../components/fallbacks/ErrorFallback': path.resolve(projectRoot, 'components/fallbacks/ErrorFallback.tsx'),
 };
 
 // Configure server settings for web access
@@ -53,8 +55,20 @@ config.server = {
 // Add specific configuration for Expo Router
 config.resolver.resolveRequest = (context, moduleName, platform) => {
   // Log resolution attempts for debugging
-  if (moduleName.includes('expo-router') || moduleName.includes('entry')) {
+  if (moduleName.includes('expo-router') || moduleName.includes('entry') || 
+      moduleName.includes('ErrorFallback')) {
     console.log(`[Metro] Resolving: ${moduleName} for platform: ${platform}`);
+  }
+
+  // Handle the missing ErrorFallback component
+  if (moduleName === '../../components/fallbacks/ErrorFallback') {
+    const errorFallbackPath = path.resolve(projectRoot, 'components/fallbacks/ErrorFallback.tsx');
+    if (fs.existsSync(errorFallbackPath)) {
+      return {
+        type: 'sourceFile',
+        filePath: errorFallbackPath,
+      };
+    }
   }
 
   // First, let Metro try to resolve it normally
