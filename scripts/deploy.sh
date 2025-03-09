@@ -48,7 +48,7 @@ npm run build:web || {
 
 # Deploy to Expo
 echo "Deploying to Expo..."
-npm run deploy:expo:preview || {
+npx eas update --auto --branch preview || {
   echo "Deployment failed."
   exit 1
 }
