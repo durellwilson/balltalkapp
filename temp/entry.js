@@ -1,3 +1,3 @@
 
-// Custom entry point to fix Metro bundling issues
+// Temporary entry file to work around Expo Router issues
 import 'expo-router/entry';

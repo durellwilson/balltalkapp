@@ -3,6 +3,8 @@ import { View, StyleSheet, FlatList, Dimensions, ActivityIndicator } from 'react
 import { Text, Button, Card, ActionButton } from '../../components/themed';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, FontAwesome } from '@expo/vector-icons';
+import { useAuth } from '../../contexts/auth';
+import { router } from 'expo-router';
 
 const { width, height } = Dimensions.get('window');
 
@@ -135,8 +137,37 @@ const ReelCard = ({ item }: { item: ReelItem }) => {
   );
 };
 
+/**
+ * DiscoverScreen Component
+ * 
+ * The discover screen for fans to explore content from athletes.
+ * Only accessible to users with the 'fan' role.
+ */
 export default function DiscoverScreen() {
   const [loading, setLoading] = useState(false);
+  const { user } = useAuth();
+  const isFan = user?.role === 'fan';
+  
+  // If user is not a fan, show access denied message
+  if (!isFan) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.accessDeniedContainer}>
+          <Text style={styles.accessDeniedTitle}>
+            Discover Access Restricted
+          </Text>
+          <Text style={styles.accessDeniedMessage}>
+            The Discover feature is only available to fan accounts.
+          </Text>
+          <Button
+            title="Go to Home"
+            onPress={() => router.replace('/(tabs)/')}
+            style={styles.button}
+          />
+        </View>
+      </SafeAreaView>
+    );
+  }
   
   return (
     <SafeAreaView style={styles.container}>
@@ -289,5 +320,26 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  accessDeniedContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  accessDeniedTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginBottom: 10,
+  },
+  accessDeniedMessage: {
+    fontSize: 16,
+    color: '#666',
+    marginBottom: 20,
+  },
+  button: {
+    backgroundColor: '#007AFF',
+    padding: 15,
+    borderRadius: 5,
   },
 });

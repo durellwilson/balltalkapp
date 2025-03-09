@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Create Firestore Index</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+      line-height: 1.6;
+    }
+    h1 {
+      color: #333;
+      border-bottom: 1px solid #eee;
+      padding-bottom: 10px;
+    }
+    .container {
+      background-color: #f9f9f9;
+      border: 1px solid #ddd;
+      border-radius: 5px;
+      padding: 20px;
+      margin: 20px 0;
+    }
+    .button {
+      display: inline-block;
+      background-color: #4285f4;
+      color: white;
+      padding: 10px 20px;
+      border-radius: 5px;
+      text-decoration: none;
+      font-weight: bold;
+      margin-top: 20px;
+    }
+    .button:hover {
+      background-color: #3367d6;
+    }
+    .code {
+      background-color: #f5f5f5;
+      border: 1px solid #ddd;
+      border-radius: 3px;
+      padding: 10px;
+      font-family: monospace;
+      overflow-x: auto;
+      white-space: pre-wrap;
+    }
+    .steps {
+      margin-top: 20px;
+    }
+    .step {
+      margin-bottom: 15px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Create Firestore Index for BallTalk App</h1>
+  
+  <div class="container">
+    <h2>Index Information</h2>
+    <p>This page will help you create the required Firestore index for the BallTalk app. The index is needed for the following query in the <code>DawService.getUserProjects</code> function:</p>
+    
+    <div class="code">
+const projectsQuery = query(
+  collection(db, PROJECTS_COLLECTION),
+  where('userId', '==', userId),
+  orderBy('updatedAt', 'desc'),
+  orderBy('__name__', 'asc'),
+  limit(limitCount)
+);
+    </div>
+    
+    <h3>Index Details:</h3>
+    <ul>
+      <li><strong>Collection Group:</strong> projects</li>
+      <li><strong>Fields:</strong>
+        <ul>
+          <li>userId (Ascending)</li>
+          <li>updatedAt (Descending)</li>
+          <li>__name__ (Ascending)</li>
+        </ul>
+      </li>
+    </ul>
+    
+    <a href="https://console.firebase.google.com/v1/r/project/balltalkbeta/firestore/indexes?create_composite=Ck1wcm9qZWN0cy9iYWxsdGFsa2JldGEvZGF0YWJhc2VzLyhkZWZhdWx0KS9jb2xsZWN0aW9uR3JvdXBzL3Byb2plY3RzL2luZGV4ZXMvXxABGgoKBnVzZXJJZBABGg0KCXVwZGF0ZWRBdBACGgwKCF9fbmFtZV9fEAI" class="button" target="_blank">Create Index in Firebase Console</a>
+  </div>
+  
+  <div class="steps">
+    <h2>Manual Steps:</h2>
+    
+    <div class="step">
+      <h3>Step 1: Sign in to Firebase Console</h3>
+      <p>Make sure you're signed in to the Firebase Console with an account that has access to the BallTalk project.</p>
+    </div>
+    
+    <div class="step">
+      <h3>Step 2: Create the Index</h3>
+      <p>Click the button above to open the Firebase Console with the index creation form pre-filled. Then click "Create index" to create the index.</p>
+    </div>
+    
+    <div class="step">
+      <h3>Step 3: Wait for the Index to Build</h3>
+      <p>After creating the index, it may take a few minutes for Firebase to build it. You can check the status in the Firebase Console under "Firestore Database" > "Indexes" tab.</p>
+    </div>
+  </div>
+  
+  <div class="container">
+    <h2>Alternative Methods</h2>
+    
+    <h3>Using Firebase CLI:</h3>
+    <p>If you have the Firebase CLI installed, you can create the index by adding it to your <code>firestore.indexes.json</code> file and deploying:</p>
+    
+    <div class="code">
+// Add this to firestore.indexes.json
+{
+  "collectionGroup": "projects",
+  "queryScope": "COLLECTION",
+  "fields": [
+    { "fieldPath": "userId", "order": "ASCENDING" },
+    { "fieldPath": "updatedAt", "order": "DESCENDING" },
+    { "fieldPath": "__name__", "order": "ASCENDING" }
+  ]
+}
+
+// Then run:
+firebase deploy --only firestore:indexes
+    </div>
+    
+    <h3>Using the Node.js Script:</h3>
+    <p>You can also use the provided Node.js script to create the index programmatically:</p>
+    
+    <div class="code">
+// Install Firebase Admin SDK if not already installed
+npm install firebase-admin
+
+// Set up service account credentials
+export GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
+
+// Run the script
+node scripts/create-index.js
+    </div>
+  </div>
+</body>
+</html> 

@@ -1370,11 +1370,13 @@ async stopRecording(): Promise<Recording | null> {
         }
         
         const db = getFirestore();
-        // Simplify the query to match the existing index in firestore.indexes.json
+        // Use the existing index that includes userId, updatedAt, and __name__
         const projectsQuery = query(
           collection(db, PROJECTS_COLLECTION),
           where('userId', '==', userId),
-          orderBy('updatedAt', 'desc')
+          orderBy('updatedAt', 'desc'),
+          orderBy('__name__', 'asc'),
+          limit(limitCount) // Apply limit in the query instead of in memory
         );
         
         const querySnapshot = await getDocs(projectsQuery);
@@ -1390,8 +1392,7 @@ async stopRecording(): Promise<Recording | null> {
           } as Project);
         });
         
-        // Handle limit in memory to avoid index issues
-        return projects.slice(0, limitCount);
+        return projects;
       } catch (error) {
         console.error('Error getting user projects:', error);
         throw new Error(`Failed to get user projects: ${(error as Error).message}`);

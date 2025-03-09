@@ -1,18 +1,29 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { StyleSheet } from 'react-native';
+import { StyleSheet, Platform } from 'react-native';
 import { useAuth } from '../../contexts/auth';
 import Colors from '../../constants/Colors';
 
 /**
  * TabLayout component that handles the bottom tab navigation
- * Tabs are conditionally rendered based on user role
+ * Tabs are conditionally rendered based on user role:
+ * - Athletes: Home, Studio, Profile, Chat
+ * - Fans: Home, Discover, Profile, Chat
  */
 export default function TabLayout() {
   const { user } = useAuth();
   const isAthlete = user?.role === 'athlete';
   const isFan = user?.role === 'fan';
+  
+  // Log user role for debugging
+  useEffect(() => {
+    if (user) {
+      console.log(`User role: ${user.role || 'undefined'}`);
+    } else {
+      console.log('No user signed in');
+    }
+  }, [user]);
   
   return (
     <Tabs
@@ -20,8 +31,8 @@ export default function TabLayout() {
         headerShown: false,
         tabBarActiveTintColor: Colors.primary,
         tabBarStyle: { 
-          height: 80, 
-          paddingBottom: 20,
+          height: Platform.OS === 'ios' ? 80 : 60, 
+          paddingBottom: Platform.OS === 'ios' ? 20 : 10,
           borderTopColor: '#E5E5E5',
           borderTopWidth: 1
         }
@@ -37,7 +48,7 @@ export default function TabLayout() {
       />
       
       {/* Studio Tab - Only visible to athletes */}
-      {isAthlete ? (
+      {isAthlete && (
         <Tabs.Screen
           name="studio"
           options={{
@@ -45,21 +56,25 @@ export default function TabLayout() {
             tabBarIcon: ({ color }) => <Ionicons name="mic" size={24} color={color} />
           }}
         />
-      ) : (
+      )}
+      
+      {/* Discover Tab - Only visible to fans */}
+      {isFan && (
         <Tabs.Screen
-          name="studio"
+          name="discover"
           options={{
-            tabBarButton: () => null
+            title: 'Discover',
+            tabBarIcon: ({ color }) => <Ionicons name="compass" size={24} color={color} />
           }}
         />
       )}
       
-      {/* Profile Tab - Different for fans and athletes */}
+      {/* Profile Tab */}
       <Tabs.Screen
-        name={isFan ? 'fan-profile' : 'profile'}
+        name="profile"
         options={{
-          title: isFan ? 'Fan Hub' : 'Profile',
-          tabBarIcon: ({ color }) => <Ionicons name={isFan ? "people" : "person"} size={24} color={color} />
+          title: 'Profile',
+          tabBarIcon: ({ color }) => <Ionicons name="person" size={24} color={color} />
         }}
       />
       
@@ -76,22 +91,22 @@ export default function TabLayout() {
         Hidden screens - These are accessible via direct navigation
         but not shown in the tab bar
       */}
-      <Tabs.Screen name="discover" options={{ tabBarButton: () => null }} />
-      <Tabs.Screen name="shared-tracks" options={{ tabBarButton: () => null }} />
-      <Tabs.Screen name="batch" options={{ tabBarButton: () => null }} />
-      <Tabs.Screen name="vocal-isolation" options={{ tabBarButton: () => null }} />
-      <Tabs.Screen name="dolby" options={{ tabBarButton: () => null }} />
-      <Tabs.Screen name="athletes-example" options={{ tabBarButton: () => null }} />
-      <Tabs.Screen name="verification-test" options={{ tabBarButton: () => null }} />
-      <Tabs.Screen name="testing" options={{ tabBarButton: () => null }} />
-      <Tabs.Screen name="recordings" options={{ tabBarButton: () => null }} />
-      <Tabs.Screen name="songs" options={{ tabBarButton: () => null }} />
-      <Tabs.Screen name="podcasts" options={{ tabBarButton: () => null }} />
-      <Tabs.Screen name="athletes" options={{ tabBarButton: () => null }} />
-      <Tabs.Screen name="community" options={{ tabBarButton: () => null }} />
-      <Tabs.Screen name="fan-hub" options={{ tabBarButton: () => null }} />
-      <Tabs.Screen name="admin-verification" options={{ tabBarButton: () => null }} />
-      <Tabs.Screen name="athlete-profile" options={{ tabBarButton: () => null }} />
+      <Tabs.Screen name="shared-tracks" options={{ href: null }} />
+      <Tabs.Screen name="batch" options={{ href: null }} />
+      <Tabs.Screen name="vocal-isolation" options={{ href: null }} />
+      <Tabs.Screen name="dolby" options={{ href: null }} />
+      <Tabs.Screen name="athletes-example" options={{ href: null }} />
+      <Tabs.Screen name="verification-test" options={{ href: null }} />
+      <Tabs.Screen name="testing" options={{ href: null }} />
+      <Tabs.Screen name="recordings" options={{ href: null }} />
+      <Tabs.Screen name="songs" options={{ href: null }} />
+      <Tabs.Screen name="podcasts" options={{ href: null }} />
+      <Tabs.Screen name="athletes" options={{ href: null }} />
+      <Tabs.Screen name="community" options={{ href: null }} />
+      <Tabs.Screen name="fan-hub" options={{ href: null }} />
+      <Tabs.Screen name="admin-verification" options={{ href: null }} />
+      <Tabs.Screen name="athlete-profile" options={{ href: null }} />
+      <Tabs.Screen name="fan-profile" options={{ href: null }} />
     </Tabs>
   );
 }

@@ -23,7 +23,7 @@ import {
   Entypo
 } from '@expo/vector-icons';
 import { useAuth } from '../../contexts/auth';
-import { router, Link } from 'expo-router';
+import { router, Link, Redirect } from 'expo-router';
 import AthleteVerificationForm from '../../components/verification/AthleteVerificationForm';
 import VerificationService from '../../services/VerificationService';
 
@@ -125,286 +125,24 @@ const VerificationBadge = ({ verified, size = 'small' }: { verified: boolean; si
   );
 };
 
-export default function ProfileScreen() {
-  const { user, signOut } = useAuth();
-  const [isVerified, setIsVerified] = useState(false);
-  const [showVerificationModal, setShowVerificationModal] = useState(false);
-  const [activeTab, setActiveTab] = useState('All');
-
-  // Check if user is an athlete
-  useEffect(() => {
-    if (user && user.role === 'fan') {
-      Alert.alert(
-        'Fan Account',
-        'This section is for athlete accounts. You will be redirected to the Fan Hub.',
-        [
-          { 
-            text: 'OK', 
-            onPress: () => router.replace('/(tabs)/fan-profile') 
-          }
-        ]
-      );
-    }
-  }, [user]);
-
-  // Fetch verification status
-  useEffect(() => {
-    const fetchVerificationStatus = async () => {
-      if (user?.uid) {
-        try {
-          const status = await VerificationService.getVerificationStatus(user.uid);
-          setIsVerified(status.isVerified);
-        } catch (error) {
-          console.error('Error fetching verification status:', error);
-        }
-      }
-    };
-
-    fetchVerificationStatus();
-  }, [user]);
-
-  // If no user is logged in, show login prompt
-  if (!user) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.centerContent}>
-          <Text style={styles.title}>Athlete Profile</Text>
-          <Text style={styles.message}>Please sign in to access your profile</Text>
-          <TouchableOpacity 
-            style={styles.button}
-            onPress={() => router.replace('/(auth)/login')}
-          >
-            <Text style={styles.buttonText}>Sign In</Text>
-          </TouchableOpacity>
-        </View>
-      </SafeAreaView>
-    );
+/**
+ * ProfileTab component that redirects to the appropriate profile screen
+ * based on the user's role (athlete or fan)
+ */
+export default function ProfileTab() {
+  const { user } = useAuth();
+  const isAthlete = user?.role === 'athlete';
+  const isFan = user?.role === 'fan';
+  
+  // Redirect to the appropriate profile screen based on user role
+  if (isAthlete) {
+    return <Redirect href="/athlete-profile" />;
+  } else if (isFan) {
+    return <Redirect href="/fan-profile" />;
+  } else {
+    // Default profile for other user types or when role is not yet determined
+    return <Redirect href="/profile-default" />;
   }
-  
-  // Mock user data - in a real app, this would come from a profile service
-  const mockUserData = {
-    name: user?.displayName || user?.username || 'Athlete Name',
-    username: user?.username || 'athlete',
-    avatar: user?.photoURL || 'https://via.placeholder.com/150',
-    followers: 12400,
-    following: 843,
-    verified: isVerified,
-    bio: 'Professional basketball player. Music enthusiast. Creating content to inspire the next generation.',
-    team: 'Chicago Bulls',
-    sport: 'Basketball',
-    socialLinks: {
-      instagram: 'athlete_official',
-      twitter: 'athlete_official',
-      tiktok: 'athlete_official'
-    }
-  };
-  
-  const filteredContent = activeTab === 'All' 
-    ? MOCK_USER_CONTENT 
-    : MOCK_USER_CONTENT.filter(item => {
-        if (activeTab === 'Music') return item.type === 'music';
-        if (activeTab === 'Podcasts') return item.type === 'podcast';
-        if (activeTab === 'Videos') return item.type === 'video';
-        if (activeTab === 'Live') return item.type === 'live';
-        return true;
-      });
-  
-  const openVerificationModal = () => {
-    setShowVerificationModal(true);
-  };
-  
-  const closeVerificationModal = () => {
-    setShowVerificationModal(false);
-  };
-  
-  const handleVerificationComplete = () => {
-    closeVerificationModal();
-    setIsVerified(true);
-  };
-  
-  const handleSignOut = async () => {
-    try {
-      await signOut();
-      router.replace('/login');
-    } catch (error) {
-      console.error('Error signing out:', error);
-    }
-  };
-  
-  return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Profile</Text>
-        <View style={styles.headerActions}>
-          <ActionButton 
-            style={[styles.headerButton, { marginRight: 8 }]} 
-            onPress={() => router.push('/(tabs)/verification-test')}
-          >
-            <Ionicons name="shield-checkmark" size={22} color="#666" />
-          </ActionButton>
-          <ActionButton style={styles.headerButton} onPress={handleSignOut}>
-            <Ionicons name="log-out-outline" size={22} color="#666" />
-          </ActionButton>
-        </View>
-      </View>
-      
-      <ScrollView style={styles.content}>
-        {/* Profile Header */}
-        <View style={styles.profileHeader}>
-          <View style={styles.avatarContainer}>
-            <Image source={{ uri: mockUserData.avatar }} style={styles.avatar} />
-            <VerificationBadge verified={mockUserData.verified} size="large" />
-          </View>
-          <View style={styles.profileInfo}>
-            <View style={styles.nameRow}>
-              <Text style={styles.name}>{mockUserData.name}</Text>
-              {user?.role === 'athlete' && !isVerified && (
-                <TouchableOpacity 
-                  style={[
-                    styles.verifyButton, 
-                    showVerificationModal && styles.pendingButton
-                  ]} 
-                  onPress={openVerificationModal}
-                  disabled={showVerificationModal}
-                >
-                  <Text style={styles.verifyButtonText}>
-                    {showVerificationModal ? 'Verification Pending' : 'Get Verified'}
-                  </Text>
-                </TouchableOpacity>
-              )}
-            </View>
-            <Text style={styles.username}>@{mockUserData.username}</Text>
-            <Text style={styles.bio}>{mockUserData.bio}</Text>
-            
-            {(mockUserData.team || mockUserData.sport) && (
-              <View style={styles.athleteDetails}>
-                {mockUserData.team && (
-                  <View style={styles.athleteDetail}>
-                    <Ionicons name="people" size={16} color="#666" style={styles.detailIcon} />
-                    <Text style={styles.detailText}>{mockUserData.team}</Text>
-                  </View>
-                )}
-                {mockUserData.sport && (
-                  <View style={styles.athleteDetail}>
-                    <Ionicons name="basketball" size={16} color="#666" style={styles.detailIcon} />
-                    <Text style={styles.detailText}>{mockUserData.sport}</Text>
-                  </View>
-                )}
-              </View>
-            )}
-            
-            <View style={styles.statsRow}>
-              <View style={styles.statItem}>
-                <Text style={styles.statValue}>{mockUserData.followers.toLocaleString()}</Text>
-                <Text style={styles.statLabel}>Followers</Text>
-              </View>
-              <View style={styles.statDivider} />
-              <View style={styles.statItem}>
-                <Text style={styles.statValue}>{mockUserData.following.toLocaleString()}</Text>
-                <Text style={styles.statLabel}>Following</Text>
-              </View>
-              <View style={styles.statDivider} />
-              <View style={styles.statItem}>
-                <Text style={styles.statValue}>{MOCK_USER_CONTENT.length}</Text>
-                <Text style={styles.statLabel}>Posts</Text>
-              </View>
-            </View>
-            
-            <View style={styles.socialLinks}>
-              {mockUserData.socialLinks.instagram && (
-                <ActionButton style={styles.socialButton}>
-                  <FontAwesome name="instagram" size={22} color="#E1306C" />
-                </ActionButton>
-              )}
-              {mockUserData.socialLinks.twitter && (
-                <ActionButton style={styles.socialButton}>
-                  <FontAwesome name="twitter" size={22} color="#1DA1F2" />
-                </ActionButton>
-              )}
-              {mockUserData.socialLinks.tiktok && (
-                <ActionButton style={styles.socialButton}>
-                  <FontAwesome5 name="tiktok" size={22} color="#000000" />
-                </ActionButton>
-              )}
-            </View>
-          </View>
-        </View>
-        
-        {/* Content Tabs */}
-        <ScrollView 
-          horizontal 
-          showsHorizontalScrollIndicator={false} 
-          style={styles.tabsContainer}
-          contentContainerStyle={styles.tabsContent}
-        >
-          {CONTENT_TABS.map(tab => (
-            <ActionButton
-              key={tab}
-              style={[
-                styles.tabButton,
-                activeTab === tab && styles.tabButtonActive
-              ]}
-              onPress={() => setActiveTab(tab)}
-            >
-              <Text
-                style={[
-                  styles.tabText,
-                  activeTab === tab && styles.tabTextActive
-                ]}
-              >
-                {tab}
-              </Text>
-            </ActionButton>
-          ))}
-        </ScrollView>
-        
-        {/* User Content */}
-        <View style={styles.contentGrid}>
-          {filteredContent.length > 0 ? (
-            filteredContent.map(item => (
-              <ContentItem key={item.id} item={item} />
-            ))
-          ) : (
-            <View style={styles.emptyContentContainer}>
-              <Ionicons name="albums-outline" size={48} color="#ccc" />
-              <Text style={styles.emptyContentText}>No {activeTab} content yet</Text>
-            </View>
-          )}
-        </View>
-      </ScrollView>
-      
-      {/* Verification Modal */}
-      <Modal
-        visible={showVerificationModal}
-        animationType="slide"
-        transparent={true}
-        onRequestClose={closeVerificationModal}
-      >
-        <View style={styles.modalContainer}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Verification Status</Text>
-              <ActionButton style={styles.closeButton} onPress={closeVerificationModal}>
-                <Ionicons name="close" size={24} color="#666" />
-              </ActionButton>
-            </View>
-            
-            <View style={styles.modalBody}>
-              <View style={styles.verificationIconContainer}>
-                <Ionicons name="time-outline" size={60} color="#FF9500" />
-              </View>
-              
-              <Text style={styles.verificationTitle}>Verification In Progress</Text>
-              <Text style={styles.verificationDescription}>
-                Your verification request is currently being reviewed by our team. This process typically
-                takes 1-3 business days. You'll be notified when the review is complete.
-              </Text>
-            </View>
-          </View>
-        </View>
-      </Modal>
-    </SafeAreaView>
-  );
 }
 
 const styles = StyleSheet.create({

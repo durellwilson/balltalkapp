@@ -28,6 +28,7 @@ interface RecordingResult {
   uri: string;
   duration: number;
   audioBlob?: Blob; // Make this optional to handle both web and native platforms
+  size?: number;
 }
 
 /**
@@ -254,10 +255,11 @@ const RecordingInterface: React.FC<RecordingInterfaceProps> = ({
           console.log('Starting recording on web platform...');
           
           // Start web recording
-          const result = await WebAudioRecordingService.startRecording();
-          
-          if (!result.success) {
-            throw new Error(result.error || 'Failed to start web recording');
+          try {
+            await WebAudioRecordingService.startRecording();
+          } catch (webStartError) {
+            console.error('Error in WebAudioRecordingService.startRecording:', webStartError);
+            throw new Error(`Failed to start web recording: ${webStartError.message || 'Unknown error'}`);
           }
           
           // Start timer and audio level monitoring
@@ -271,6 +273,14 @@ const RecordingInterface: React.FC<RecordingInterfaceProps> = ({
           console.log('Recording started successfully on web platform');
         } catch (webError) {
           console.error('Error starting web recording:', webError);
+          
+          // Attempt to clean up web recording resources
+          try {
+            WebAudioRecordingService.cleanup();
+          } catch (cleanupError) {
+            console.error('Error cleaning up web recording resources:', cleanupError);
+          }
+          
           throw new Error(`Failed to start web recording: ${webError.message || 'Unknown error'}`);
         }
       }
@@ -407,16 +417,23 @@ const RecordingInterface: React.FC<RecordingInterfaceProps> = ({
         // Web platform recording
         try {
           // Stop web recording
-          const result = await WebAudioRecordingService.stopRecording();
+          let result;
+          try {
+            result = await WebAudioRecordingService.stopRecording();
+          } catch (webStopError) {
+            console.error('Error in WebAudioRecordingService.stopRecording:', webStopError);
+            throw new Error(`Failed to stop web recording: ${webStopError.message || 'Unknown error'}`);
+          }
           
-          if (!result.success || !result.audioBlob || !result.audioUrl) {
-            throw new Error(result.error || 'Failed to stop web recording');
+          if (!result || !result.uri) {
+            throw new Error('Failed to get valid recording result from web recording');
           }
           
           // Create result
           recordingResult = {
-            uri: result.audioUrl,
-            duration: recordingDuration,
+            uri: result.uri,
+            duration: result.duration || recordingDuration,
+            size: result.size,
             audioBlob: result.audioBlob
           };
           
@@ -426,22 +443,26 @@ const RecordingInterface: React.FC<RecordingInterfaceProps> = ({
           throw new Error(`Failed to stop web recording: ${webError.message || 'Unknown error'}`);
         } finally {
           // Clean up web audio resources
-          if (mediaStreamRef.current) {
-            mediaStreamRef.current.getTracks().forEach(track => track.stop());
-            mediaStreamRef.current = null;
-          }
-          
-          if (audioContextRef.current) {
-            try {
-              await audioContextRef.current.close();
-            } catch (closeError) {
-              console.error('Error closing audio context:', closeError);
+          try {
+            if (mediaStreamRef.current) {
+              mediaStreamRef.current.getTracks().forEach(track => track.stop());
+              mediaStreamRef.current = null;
             }
-            audioContextRef.current = null;
-            analyserRef.current = null;
+            
+            if (audioContextRef.current) {
+              try {
+                await audioContextRef.current.close();
+              } catch (closeError) {
+                console.error('Error closing audio context:', closeError);
+              }
+              audioContextRef.current = null;
+              analyserRef.current = null;
+            }
+            
+            WebAudioRecordingService.cleanup();
+          } catch (cleanupError) {
+            console.error('Error cleaning up web audio resources:', cleanupError);
           }
-          
-          WebAudioRecordingService.cleanup();
         }
       }
       
@@ -481,13 +502,12 @@ const RecordingInterface: React.FC<RecordingInterfaceProps> = ({
       clearInterval(levelIntervalRef.current);
     }
     
-    if (Platform.OS === 'web' && analyserRef.current) {
-      // Web implementation using Web Audio API
+    if (Platform.OS === 'web') {
+      // Web implementation using WebAudioRecordingService
       levelIntervalRef.current = setInterval(() => {
-        if (!analyserRef.current) return;
+        const dataArray = WebAudioRecordingService.getAudioLevels();
         
-        const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
-        analyserRef.current.getByteFrequencyData(dataArray);
+        if (!dataArray) return;
         
         // Calculate average level
         let sum = 0;

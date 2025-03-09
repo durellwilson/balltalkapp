@@ -13,6 +13,7 @@ interface RecordingResult {
   duration: number;
   size?: number;
   waveformData?: number[];
+  audioBlob?: Blob;
 }
 
 interface RecordingOptions {
@@ -504,19 +505,20 @@ class WebAudioRecordingService {
             console.log('Raw web audio recording stopped, duration:', duration, 'size:', audioBlob.size);
             
             // Create a URL for the blob
-            const rawUrl = URL.createObjectURL(audioBlob);
+            const uri = URL.createObjectURL(audioBlob);
             
             // Create an audio element to test the recording
-            const audioElement = new Audio(rawUrl);
+            const audioElement = new Audio(uri);
             audioElement.onloadedmetadata = () => {
               console.log('Audio metadata loaded, duration:', audioElement.duration);
             };
             
             // Return the result with the raw URL
             resolve({
-              uri: rawUrl,
+              uri,
               duration,
-              size: audioBlob.size
+              size: audioBlob.size,
+              audioBlob
             });
           } catch (error) {
             console.error('Error processing web audio recording:', error);
