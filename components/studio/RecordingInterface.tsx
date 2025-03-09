@@ -4,11 +4,10 @@ import { Audio } from 'expo-av';
 import { Ionicons } from '@expo/vector-icons';
 import Colors from '../../constants/Colors';
 import * as FileSystem from 'expo-file-system';
-import { useAppTheme } from '../../components/ThemeProvider';
 import WebAudioRecordingService, { WebAudioRecordingService as WebAudioRecordingServiceClass } from '../../services/WebAudioRecordingService';
 import { Slider } from '@react-native-community/slider';
 import AudioWaveform from './AudioWaveform';
-import { useTheme } from '../../contexts/theme';
+import { useTheme } from '../../hooks/useTheme';
 
 // Audio constants for expo-av
 const INTERRUPTION_MODE_IOS_DUCK_OTHERS = 1;
@@ -45,8 +44,7 @@ const RecordingInterface: React.FC<RecordingInterfaceProps> = ({
   onRecordingComplete,
   existingTrackUri
 }) => {
-  const { theme, isDark } = useAppTheme();
-  const { isDark: useThemeIsDark, theme: useThemeTheme } = useTheme();
+  const { theme, isDark } = useTheme();
   
   // Recording state
   const [isRecording, setIsRecording] = useState(false);
