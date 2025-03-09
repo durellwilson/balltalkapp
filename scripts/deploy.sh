@@ -39,16 +39,16 @@ fi
 # Skip tests for now
 echo "Skipping tests for now..."
 
-# Build the app
-echo "Building the app..."
-npm run build || {
+# Build the app for web
+echo "Building the app for web..."
+npm run build:web || {
   echo "Build failed. Fix the issues before deploying."
   exit 1
 }
 
 # Deploy to Expo
 echo "Deploying to Expo..."
-npx expo publish || {
+npm run deploy:expo:preview || {
   echo "Deployment failed."
   exit 1
 }
