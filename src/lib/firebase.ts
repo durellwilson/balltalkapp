@@ -90,15 +90,30 @@ const initializeServices = (app: FirebaseApp) => {
     
     console.log('Firebase services initialized successfully');
     
-    // Enable offline persistence for Firestore
-    if (Platform.OS === 'web') {
-      enableIndexedDbPersistence(db)
+    return { auth, db, storage };
+  } catch (error) {
+    console.error('Error initializing Firebase services:', error);
+    throw error;
+  }
+};
+
+// Enable Firestore persistence separately to avoid initialization issues
+const enableFirestorePersistence = (db: Firestore) => {
+  if (Platform.OS === 'web') {
+    // Only try to enable persistence if we're in a fresh page load
+    // This prevents the "already started" error
+    const persistenceAlreadyEnabled = window.localStorage.getItem('firestorePersistenceEnabled') === 'true';
+    
+    if (!persistenceAlreadyEnabled) {
+      enableIndexedDbPersistence(db, { forceOwningTab: true })
         .then(() => {
           console.log('Firestore offline persistence enabled for web');
+          window.localStorage.setItem('firestorePersistenceEnabled', 'true');
         })
         .catch((err) => {
           if (err.code === 'failed-precondition') {
             console.warn('Multiple tabs open, persistence can only be enabled in one tab at a time.');
+            // Continue without persistence in this tab
           } else if (err.code === 'unimplemented') {
             console.warn('The current browser does not support all of the features required to enable persistence');
           } else {
@@ -106,16 +121,13 @@ const initializeServices = (app: FirebaseApp) => {
           }
         });
     } else {
-      // For native platforms
-      enableIndexedDbPersistence(db).catch((err) => {
-        console.error('Error enabling Firestore offline persistence:', err);
-      });
+      console.log('Firestore persistence already enabled in another tab');
     }
-    
-    return { auth, db, storage };
-  } catch (error) {
-    console.error('Error initializing Firebase services:', error);
-    throw error;
+  } else {
+    // For native platforms
+    enableIndexedDbPersistence(db, { forceOwningTab: true }).catch((err) => {
+      console.error('Error enabling Firestore offline persistence:', err);
+    });
   }
 };
 
@@ -156,7 +168,23 @@ try {
   db = services.db;
   storage = services.storage;
   
+  // Connect to emulators if needed
   connectToEmulators(auth, db, storage);
+  
+  // Enable persistence separately after initialization
+  enableFirestorePersistence(db);
+  
+  // Log initialization status
+  console.log('Firebase services initialized:', {
+    auth: auth ? '✓ Available' : '✗ Failed',
+    db: db ? '✓ Available' : '✗ Failed',
+    storage: storage ? '✓ Available' : '✗ Failed'
+  });
+  
+  // Log current auth state
+  auth.onAuthStateChanged((user) => {
+    console.log('Current auth state:', user ? `User signed in: ${user.uid}` : 'No user signed in');
+  });
 } catch (error) {
   console.error('Fatal error initializing Firebase:', error);
   // In a real app, you might want to show a user-friendly error message

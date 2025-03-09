@@ -5,10 +5,10 @@ import { Ionicons } from '@expo/vector-icons';
 import Colors from '../../constants/Colors';
 import * as FileSystem from 'expo-file-system';
 import { useAppTheme } from '../../components/ThemeProvider';
-import WebAudioRecordingService from '../../services/WebAudioRecordingService';
-import Slider from '@react-native-community/slider';
+import WebAudioRecordingService, { WebAudioRecordingService as WebAudioRecordingServiceClass } from '../../services/WebAudioRecordingService';
+import { Slider } from '@react-native-community/slider';
 import AudioWaveform from './AudioWaveform';
-import { useTheme } from '../../hooks/useTheme';
+import { useTheme } from '../../contexts/theme';
 
 // Audio constants for expo-av
 const INTERRUPTION_MODE_IOS_DUCK_OTHERS = 1;
@@ -71,424 +71,302 @@ const RecordingInterface: React.FC<RecordingInterfaceProps> = ({
   const audioContextRef = useRef<AudioContext | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   
+  // Web audio recording service
+  const webRecordingServiceRef = useRef<WebAudioRecordingService | null>(null);
+  
   // Initialize audio session
   useEffect(() => {
     const initAudio = async () => {
-      let retryCount = 0;
-      const maxRetries = 3;
-      
-      const tryInitialize = async () => {
-        try {
-          console.log('Initializing audio session...');
+      try {
+        console.log('Initializing audio session...');
+        
+        // Initialize web recording service if on web platform
+        if (Platform.OS === 'web') {
+          webRecordingServiceRef.current = new WebAudioRecordingServiceClass();
           
-          if (Platform.OS !== 'web') {
-            // Native platforms use Expo Audio
-            await Audio.setAudioModeAsync({
-              allowsRecordingIOS: true,
-              playsInSilentModeIOS: true,
-              staysActiveInBackground: true,
-              shouldDuckAndroid: true,
-              interruptionModeIOS: INTERRUPTION_MODE_IOS_DUCK_OTHERS,
-              interruptionModeAndroid: INTERRUPTION_MODE_ANDROID_DUCK_OTHERS,
-            });
-            
-            // Request permissions for native platforms
-            const { granted } = await Audio.requestPermissionsAsync();
-            setMicrophonePermission(granted);
-            
-            if (!granted) {
-              throw new Error('Microphone permission is required to record audio.');
-            }
-          } else {
-            // Web platform - check if MediaRecorder is available
-            if (!window.MediaRecorder) {
-              throw new Error('MediaRecorder is not supported in this browser');
-            }
-            
-            // Request permissions for web
-            try {
-              const result = await WebAudioRecordingService.requestPermissions();
-              setMicrophonePermission(result);
-              
-              if (!result) {
-                throw new Error('Microphone permission is required to record audio.');
-              }
-            } catch (permError) {
-              console.error('Error requesting microphone permissions:', permError);
-              throw new Error('Failed to request microphone permissions.');
-            }
+          // Request permissions for web
+          const permissionGranted = await webRecordingServiceRef.current.requestPermissions();
+          setMicrophonePermission(permissionGranted);
+          
+          if (!permissionGranted) {
+            throw new Error('Microphone permission is required to record audio.');
           }
           
-          console.log('Audio session initialized successfully');
-          return true;
-        } catch (error) {
-          console.error(`Audio initialization attempt ${retryCount + 1} failed:`, error);
-          return false;
+          console.log('Web audio recording service initialized successfully');
+        } else {
+          // Native platforms use Expo Audio
+          await Audio.setAudioModeAsync({
+            allowsRecordingIOS: true,
+            playsInSilentModeIOS: true,
+            staysActiveInBackground: true,
+            shouldDuckAndroid: true,
+            interruptionModeIOS: INTERRUPTION_MODE_IOS_DUCK_OTHERS,
+            interruptionModeAndroid: INTERRUPTION_MODE_ANDROID_DUCK_OTHERS,
+          });
+          
+          // Request permissions for native platforms
+          const { granted } = await Audio.requestPermissionsAsync();
+          setMicrophonePermission(granted);
+          
+          if (!granted) {
+            throw new Error('Microphone permission is required to record audio.');
+          }
+          
+          console.log('Native audio recording initialized successfully');
         }
-      };
-      
-      while (retryCount < maxRetries) {
-        const success = await tryInitialize();
-        if (success) return;
-        
-        retryCount++;
-        if (retryCount < maxRetries) {
-          console.log(`Retrying audio initialization (attempt ${retryCount + 1}/${maxRetries})...`);
-          await new Promise(resolve => setTimeout(resolve, 1000 * retryCount)); // Exponential backoff
-        }
+      } catch (error) {
+        console.error('Error initializing audio:', error);
+        setErrorMessage(`Failed to initialize audio: ${error instanceof Error ? error.message : 'Unknown error'}`);
       }
-      
-      setErrorMessage('Failed to initialize audio after multiple attempts. Please check your microphone permissions and try again.');
     };
     
     initAudio();
     
-    // Clean up on unmount
+    // Cleanup function
     return () => {
-      stopRecording();
+      stopTimer();
+      stopAudioLevelMonitoring();
       
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-      }
-      
-      if (levelIntervalRef.current) {
-        clearInterval(levelIntervalRef.current);
-      }
-      
-      // Clean up web audio if needed
+      // Clean up recording resources
       if (Platform.OS === 'web') {
-        WebAudioRecordingService.cleanup();
-        
-        if (audioContextRef.current) {
-          audioContextRef.current.close().catch(console.error);
+        if (webRecordingServiceRef.current) {
+          webRecordingServiceRef.current.cleanup();
         }
-        
-        if (mediaStreamRef.current) {
-          mediaStreamRef.current.getTracks().forEach(track => track.stop());
+      } else {
+        if (recordingRef.current) {
+          recordingRef.current.stopAndUnloadAsync().catch(err => {
+            console.error('Error stopping recording during cleanup:', err);
+          });
         }
+      }
+      
+      // Clean up playback resources
+      if (playbackInstance) {
+        playbackInstance.unloadAsync().catch(err => {
+          console.error('Error unloading sound during cleanup:', err);
+        });
       }
     };
   }, []);
-  
-  // Start recording
+
+  /**
+   * Start recording
+   * Handles platform-specific recording start
+   */
   const startRecording = async () => {
     try {
-      // Clear any previous error messages
-      setErrorMessage(null);
-      
-      // Validate microphone permissions first
-      if (microphonePermission !== true) {
-        setErrorMessage('Microphone permission is required to record audio.');
+      if (isRecording) {
+        console.warn('Already recording');
         return;
       }
       
-      // Set recording state
       setIsProcessing(true);
+      setErrorMessage(null);
       
-      if (Platform.OS !== 'web') {
-        // Native platform recording
-        try {
-          console.log('Starting recording on native platform...');
-          
-          // Create recording object
-          const recording = new Audio.Recording();
-          recordingRef.current = recording;
-          
-          // Prepare recording with high quality settings
-          await recording.prepareToRecordAsync({
-            android: {
-              extension: '.m4a',
-              outputFormat: Audio.RECORDING_OPTION_ANDROID_OUTPUT_FORMAT_MPEG_4,
-              audioEncoder: Audio.RECORDING_OPTION_ANDROID_AUDIO_ENCODER_AAC,
-              sampleRate: 44100,
-              numberOfChannels: 2,
-              bitRate: 128000,
-            },
-            ios: {
-              extension: '.m4a',
-              outputFormat: Audio.RECORDING_OPTION_IOS_OUTPUT_FORMAT_MPEG4AAC,
-              audioQuality: Audio.RECORDING_OPTION_IOS_AUDIO_QUALITY_MAX,
-              sampleRate: 44100,
-              numberOfChannels: 2,
-              bitRate: 128000,
-              linearPCMBitDepth: 16,
-              linearPCMIsBigEndian: false,
-              linearPCMIsFloat: false,
-            },
-            web: {
-              mimeType: 'audio/webm',
-              bitsPerSecond: 128000,
-            },
-          });
-          
-          // Start recording
-          await recording.startAsync();
-          setRecording(recording);
-          
-          // Start timer and audio level monitoring
-          startTimer();
-          startAudioLevelMonitoring();
-          
-          // Update state
-          setIsRecording(true);
-          setIsPaused(false);
-          
-          console.log('Recording started successfully on native platform');
-        } catch (nativeError) {
-          console.error('Error starting native recording:', nativeError);
-          
-          // Attempt to clean up any partial recording
-          if (recordingRef.current) {
-            try {
-              await recordingRef.current.stopAndUnloadAsync();
-            } catch (cleanupError) {
-              console.error('Error cleaning up failed recording:', cleanupError);
-            }
-            recordingRef.current = null;
-          }
-          
-          throw new Error(`Failed to start recording: ${nativeError.message || 'Unknown error'}`);
+      if (Platform.OS === 'web') {
+        // Web recording
+        if (!webRecordingServiceRef.current) {
+          throw new Error('Web recording service not initialized');
         }
+        
+        await webRecordingServiceRef.current.startRecording();
+        console.log('Web recording started');
       } else {
-        // Web platform recording
-        try {
-          console.log('Starting recording on web platform...');
-          
-          // Start web recording
-          try {
-            await WebAudioRecordingService.startRecording();
-          } catch (webStartError) {
-            console.error('Error in WebAudioRecordingService.startRecording:', webStartError);
-            throw new Error(`Failed to start web recording: ${webStartError.message || 'Unknown error'}`);
-          }
-          
-          // Start timer and audio level monitoring
-          startTimer();
-          startAudioLevelMonitoring();
-          
-          // Update state
-          setIsRecording(true);
-          setIsPaused(false);
-          
-          console.log('Recording started successfully on web platform');
-        } catch (webError) {
-          console.error('Error starting web recording:', webError);
-          
-          // Attempt to clean up web recording resources
-          try {
-            WebAudioRecordingService.cleanup();
-          } catch (cleanupError) {
-            console.error('Error cleaning up web recording resources:', cleanupError);
-          }
-          
-          throw new Error(`Failed to start web recording: ${webError.message || 'Unknown error'}`);
-        }
+        // Native recording
+        const recordingOptions = {
+          android: {
+            extension: '.m4a',
+            outputFormat: RECORDING_OPTION_ANDROID_OUTPUT_FORMAT_MPEG_4,
+            audioEncoder: RECORDING_OPTION_ANDROID_AUDIO_ENCODER_AAC,
+            sampleRate: 44100,
+            numberOfChannels: 2,
+            bitRate: 128000,
+          },
+          ios: {
+            extension: '.m4a',
+            outputFormat: RECORDING_OPTION_IOS_OUTPUT_FORMAT_MPEG4AAC,
+            audioQuality: RECORDING_OPTION_IOS_AUDIO_QUALITY_MAX,
+            sampleRate: 44100,
+            numberOfChannels: 2,
+            bitRate: 128000,
+            linearPCMBitDepth: 16,
+            linearPCMIsBigEndian: false,
+            linearPCMIsFloat: false,
+          },
+          web: {
+            mimeType: 'audio/webm',
+            bitsPerSecond: 128000,
+          },
+        };
+        
+        const recording = new Audio.Recording();
+        await recording.prepareToRecordAsync(recordingOptions);
+        await recording.startAsync();
+        recordingRef.current = recording;
+        setRecording(recording);
+        console.log('Native recording started');
       }
+      
+      // Start timer and audio level monitoring
+      setIsRecording(true);
+      setIsPaused(false);
+      setRecordingDuration(0);
+      startTimer();
+      startAudioLevelMonitoring();
+      
+      console.log('Recording started successfully');
     } catch (error) {
-      console.error('Recording failed to start:', error);
-      setErrorMessage(`Failed to start recording: ${error.message || 'Unknown error'}`);
+      console.error('Failed to start recording:', error);
+      setErrorMessage(`Failed to start recording: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setIsProcessing(false);
     }
   };
-  
-  // Pause recording
+
+  /**
+   * Pause recording
+   * Only available on web platform
+   */
   const pauseRecording = async () => {
-    if (!isRecording || isPaused) return;
-    
     try {
-      console.log('Pausing recording...');
+      if (!isRecording || isPaused) {
+        return;
+      }
+      
+      setIsProcessing(true);
       
       if (Platform.OS === 'web') {
-        // Web implementation
-        await WebAudioRecordingService.pauseRecording();
-      } else {
-        // Native implementation
-        if (recordingRef.current) {
-          await recordingRef.current.pauseAsync();
+        // Web recording pause
+        if (!webRecordingServiceRef.current) {
+          throw new Error('Web recording service not initialized');
         }
+        
+        await webRecordingServiceRef.current.pauseRecording();
+        console.log('Web recording paused');
+      } else {
+        // Native recording pause (not supported in Expo Audio)
+        console.warn('Pause recording is not supported on native platforms');
+        return;
       }
       
-      // Pause the timer
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-      }
-      
-      // Pause audio level monitoring
-      if (levelIntervalRef.current) {
-        clearInterval(levelIntervalRef.current);
-      }
+      // Stop timer but keep duration
+      stopTimer();
+      stopAudioLevelMonitoring();
       
       setIsPaused(true);
-      console.log('Recording paused successfully');
-    } catch (error: any) {
-      console.error('Error pausing recording:', error);
-      setErrorMessage(`Failed to pause recording: ${error.message || 'Unknown error'}`);
+      console.log('Recording paused');
+    } catch (error) {
+      console.error('Failed to pause recording:', error);
+      setErrorMessage(`Failed to pause recording: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setIsProcessing(false);
     }
   };
-  
-  // Resume recording
+
+  /**
+   * Resume recording
+   * Only available on web platform
+   */
   const resumeRecording = async () => {
-    if (!isRecording || !isPaused) return;
-    
     try {
-      console.log('Resuming recording...');
-      
-      if (Platform.OS === 'web') {
-        // Web implementation
-        await WebAudioRecordingService.resumeRecording();
-      } else {
-        // Native implementation
-        if (recordingRef.current) {
-          await recordingRef.current.startAsync();
-        }
+      if (!isRecording || !isPaused) {
+        return;
       }
       
-      // Resume the timer
-      timerRef.current = setInterval(() => {
-        setRecordingDuration(prev => prev + 1);
-      }, 1000);
+      setIsProcessing(true);
       
-      // Resume audio level monitoring
+      if (Platform.OS === 'web') {
+        // Web recording resume
+        if (!webRecordingServiceRef.current) {
+          throw new Error('Web recording service not initialized');
+        }
+        
+        await webRecordingServiceRef.current.resumeRecording();
+        console.log('Web recording resumed');
+      } else {
+        // Native recording resume (not supported in Expo Audio)
+        console.warn('Resume recording is not supported on native platforms');
+        return;
+      }
+      
+      // Restart timer from current duration
+      startTimer();
       startAudioLevelMonitoring();
       
       setIsPaused(false);
-      console.log('Recording resumed successfully');
-    } catch (error: any) {
-      console.error('Error resuming recording:', error);
-      setErrorMessage(`Failed to resume recording: ${error.message || 'Unknown error'}`);
+      console.log('Recording resumed');
+    } catch (error) {
+      console.error('Failed to resume recording:', error);
+      setErrorMessage(`Failed to resume recording: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setIsProcessing(false);
     }
   };
-  
-  // Stop recording
+
+  /**
+   * Stop recording
+   * Handles platform-specific recording stop and processing
+   */
   const stopRecording = async () => {
     try {
-      console.log('Stopping recording...');
+      if (!isRecording) {
+        console.warn('Not recording');
+        return;
+      }
+      
       setIsProcessing(true);
       
-      // Clear timers
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-        timerRef.current = null;
-      }
+      // Stop timer and audio level monitoring
+      stopTimer();
+      stopAudioLevelMonitoring();
       
-      if (levelIntervalRef.current) {
-        clearInterval(levelIntervalRef.current);
-        levelIntervalRef.current = null;
-      }
+      let result: RecordingResult;
       
-      let recordingResult: RecordingResult | null = null;
-      
-      if (Platform.OS !== 'web') {
-        // Native platform recording
-        try {
-          if (!recordingRef.current) {
-            throw new Error('No active recording found');
-          }
-          
-          // Stop recording
-          await recordingRef.current.stopAndUnloadAsync();
-          
-          // Get recording URI
-          const uri = recordingRef.current.getURI();
-          if (!uri) {
-            throw new Error('Failed to get recording URI');
-          }
-          
-          // Get recording status for duration
-          const status = await recordingRef.current.getStatusAsync();
-          const durationMillis = status.durationMillis || 0;
-          
-          // Create result
-          recordingResult = {
-            uri,
-            duration: durationMillis / 1000, // Convert to seconds
-          };
-          
-          console.log('Native recording stopped successfully:', recordingResult);
-        } catch (nativeError) {
-          console.error('Error stopping native recording:', nativeError);
-          throw new Error(`Failed to stop recording: ${nativeError.message || 'Unknown error'}`);
-        } finally {
-          // Clean up recording reference
-          recordingRef.current = null;
+      if (Platform.OS === 'web') {
+        // Web recording stop
+        if (!webRecordingServiceRef.current) {
+          throw new Error('Web recording service not initialized');
         }
+        
+        result = await webRecordingServiceRef.current.stopRecording();
+        console.log('Web recording stopped:', result);
       } else {
-        // Web platform recording
-        try {
-          // Stop web recording
-          let result;
-          try {
-            result = await WebAudioRecordingService.stopRecording();
-          } catch (webStopError) {
-            console.error('Error in WebAudioRecordingService.stopRecording:', webStopError);
-            throw new Error(`Failed to stop web recording: ${webStopError.message || 'Unknown error'}`);
-          }
-          
-          if (!result || !result.uri) {
-            throw new Error('Failed to get valid recording result from web recording');
-          }
-          
-          // Create result
-          recordingResult = {
-            uri: result.uri,
-            duration: result.duration || recordingDuration,
-            size: result.size,
-            audioBlob: result.audioBlob
-          };
-          
-          console.log('Web recording stopped successfully:', recordingResult);
-        } catch (webError) {
-          console.error('Error stopping web recording:', webError);
-          throw new Error(`Failed to stop web recording: ${webError.message || 'Unknown error'}`);
-        } finally {
-          // Clean up web audio resources
-          try {
-            if (mediaStreamRef.current) {
-              mediaStreamRef.current.getTracks().forEach(track => track.stop());
-              mediaStreamRef.current = null;
-            }
-            
-            if (audioContextRef.current) {
-              try {
-                await audioContextRef.current.close();
-              } catch (closeError) {
-                console.error('Error closing audio context:', closeError);
-              }
-              audioContextRef.current = null;
-              analyserRef.current = null;
-            }
-            
-            WebAudioRecordingService.cleanup();
-          } catch (cleanupError) {
-            console.error('Error cleaning up web audio resources:', cleanupError);
-          }
+        // Native recording stop
+        if (!recordingRef.current) {
+          throw new Error('No active recording');
         }
+        
+        await recordingRef.current.stopAndUnloadAsync();
+        const uri = recordingRef.current.getURI();
+        
+        if (!uri) {
+          throw new Error('Recording URI is null');
+        }
+        
+        // Get file info for size
+        const fileInfo = await FileSystem.getInfoAsync(uri);
+        
+        result = {
+          uri,
+          duration: recordingDuration,
+          size: fileInfo.size || 0
+        };
+        
+        console.log('Native recording stopped:', result);
       }
       
-      // Reset UI state
+      // Set recording URI and reset state
+      setRecordingUri(result.uri);
       setIsRecording(false);
       setIsPaused(false);
       
-      // Validate recording result
-      if (!recordingResult || !recordingResult.uri) {
-        throw new Error('Failed to get valid recording result');
-      }
-      
-      // Set recording URI and call completion handler
-      setRecordingUri(recordingResult.uri);
-      
-      // Call the completion handler with the recording URI
-      if (onRecordingComplete) {
-        onRecordingComplete(recordingResult.uri);
-      }
+      // Call the completion callback
+      onRecordingComplete(result.uri);
       
       console.log('Recording completed successfully');
     } catch (error) {
-      console.error('Error in stopRecording:', error);
-      setErrorMessage(`Failed to complete recording: ${error.message || 'Unknown error'}`);
-      
-      // Reset UI state on error
+      console.error('Failed to stop recording:', error);
+      setErrorMessage(`Failed to stop recording: ${error instanceof Error ? error.message : 'Unknown error'}`);
       setIsRecording(false);
       setIsPaused(false);
     } finally {
@@ -607,6 +485,20 @@ const RecordingInterface: React.FC<RecordingInterfaceProps> = ({
     timerRef.current = setInterval(() => {
       setRecordingDuration(prev => prev + 1);
     }, 1000);
+  };
+  
+  const stopTimer = () => {
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+  };
+  
+  const stopAudioLevelMonitoring = () => {
+    if (levelIntervalRef.current) {
+      clearInterval(levelIntervalRef.current);
+      levelIntervalRef.current = null;
+    }
   };
   
   // Render the component

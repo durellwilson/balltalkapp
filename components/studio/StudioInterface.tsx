@@ -713,7 +713,7 @@ const StudioInterface: React.FC = () => {
           duration={audioDuration}
         />
         
-        <View style={styles.positionIndicator} pointerEvents="none">
+        <View style={[styles.positionIndicator, { pointerEvents: 'none' }]}>
           <View 
             style={[
               styles.positionLine, 
@@ -1152,7 +1152,6 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    pointerEvents: 'none',
   },
   positionLine: {
     position: 'absolute',

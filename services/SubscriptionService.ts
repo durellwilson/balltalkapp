@@ -11,17 +11,10 @@ import {
   increment,
   Timestamp,
   deleteDoc,
-  getFirestore
-} from '@react-native-firebase/firestore';
+  serverTimestamp
+} from 'firebase/firestore';
+import { db } from '../src/lib/firebase'; // Import from central firebase file
 import { v4 as uuidv4 } from 'uuid';
-
-// Initialize Firestore (this was causing issues - initialize it properly in the methods)
-let db;
-try {
-  db = getFirestore();
-} catch (error) {
-  console.error('Error initializing Firestore:', error);
-}
 
 // Subscription tier types
 export type SubscriptionTier = 'free' | 'basic' | 'premium' | 'vip';
@@ -175,16 +168,6 @@ class SubscriptionService {
   // Get an athlete's subscribers
   async getAthleteSubscribers(athleteId: string): Promise<Subscription[]> {
     try {
-      // Initialize Firestore if not already initialized
-      if (!db) {
-        try {
-          db = getFirestore();
-        } catch (error) {
-          console.error('Failed to initialize Firestore:', error);
-          return [];
-        }
-      }
-      
       if (!db) {
         console.error('Firestore DB not initialized');
         return [];

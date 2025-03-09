@@ -619,4 +619,7 @@ class WebAudioRecordingService {
   }
 }
 
-export default new WebAudioRecordingService(); 
+// Export both the class and an instance
+export { WebAudioRecordingService };
+const webAudioRecordingService = new WebAudioRecordingService();
+export default webAudioRecordingService; 

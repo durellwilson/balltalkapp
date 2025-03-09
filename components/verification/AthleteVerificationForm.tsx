@@ -18,6 +18,7 @@ import Colors from '../../constants/Colors';
 import { AntDesign, MaterialIcons, Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
+import { shadows } from '../../utils/shadowStyles';
 
 interface AthleteVerificationFormProps {
   onCancel: () => void;
@@ -548,11 +549,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     marginHorizontal: 20,
     marginVertical: 40,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
+    ...shadows.medium,
     maxHeight: '90%',
   },
   modalContainer: {

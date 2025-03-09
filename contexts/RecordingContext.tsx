@@ -4,7 +4,7 @@ import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import ErrorHandlingService from '../services/ErrorHandlingService';
-import WebAudioRecordingService from '../services/WebAudioRecordingService';
+import WebAudioRecordingService, { WebAudioRecordingService as WebAudioRecordingServiceClass } from '../services/WebAudioRecordingService';
 import AudioMonitoringService from '../services/AudioMonitoringService';
 import { LogLevel } from '../models/monitoring/MonitoringModels';
 
@@ -136,7 +136,7 @@ export const RecordingProvider: React.FC<RecordingProviderProps> = ({ children }
   // Refs
   const recordingRef = useRef<Audio.Recording | null>(null);
   const soundRef = useRef<Audio.Sound | null>(null);
-  const webRecordingServiceRef = useRef<any>(Platform.OS === 'web' ? new WebAudioRecordingService() : null);
+  const webRecordingServiceRef = useRef<any>(Platform.OS === 'web' ? new WebAudioRecordingServiceClass() : null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const errorHandlingService = useRef(ErrorHandlingService.getInstance());
   const lastOperationRef = useRef<string>('');
