@@ -16,7 +16,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system';
 import { Audio } from 'expo-av';
 import { Ionicons } from '@expo/vector-icons';
-import { useAppTheme } from '../../components/ThemeProvider';
+import { useTheme } from '../../hooks/useTheme';
 import { useAuth } from '../../hooks/useAuth';
 import SongService from '../../services/SongService';
 
@@ -43,7 +43,7 @@ const TrackUploader: React.FC<TrackUploaderProps> = ({
   onUploadComplete,
   onCancel
 }) => {
-  const { theme } = useAppTheme();
+  const { theme } = useTheme();
   const { user } = useAuth();
   const [audioFile, setAudioFile] = useState<AudioFile | null>(null);
   const [coverArt, setCoverArt] = useState<string | null>(null);

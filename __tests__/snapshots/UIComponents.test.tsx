@@ -1,8 +1,8 @@
 import React from 'react';
 import renderer from 'react-test-renderer';
 import SimpleEqualizer from '../../components/audio/SimpleEqualizer';
-import LoginScreen from '../../screens/auth/LoginScreen';
-import TestScreen from '../../screens/TestScreen';
+import LoginScreen from '../../app/auth/LoginScreen';
+import TestScreen from '../../app/TestScreen';
 
 // Mock components for TestScreen
 jest.mock('../../components/FirebaseVerification', () => 'MockFirebaseVerification');

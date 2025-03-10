@@ -1,6 +1,6 @@
 import React from 'react';
 import { render, fireEvent, waitFor } from '@testing-library/react-native';
-import SharedTracksScreen from '../../screens/SharedTracksScreen';
+import SharedTracksScreen from '../../app/shared-tracks';
 import { mockedGoBack } from '../mocks/navigation-mocks';
 import { Song } from '../../models/Song';
 import { TrackShare } from '../../models/TrackSharing';

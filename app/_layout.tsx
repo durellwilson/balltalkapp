@@ -34,10 +34,13 @@ if (Platform.OS === 'web') {
 // Polyfill for setImmediate in web browsers
 if (Platform.OS === 'web' && typeof window !== 'undefined') {
   if (!window.setImmediate) {
-    window.setImmediate = function(callback: Function, ...args: any[]) {
+    window.setImmediate = function(callback: (...args: any[]) => void, ...args: any[]) {
       return window.setTimeout(callback, 0, ...args);
-    };
-    window.clearImmediate = window.clearTimeout;
+    } as any; // Use 'any' to bypass strict type checking
+
+    window.clearImmediate = (handle) => {
+      window.clearTimeout(handle as number); // Cast handle to number
+    }; // No need for 'as any' here
   }
   
   // Add global error handler for uncaught promise rejections

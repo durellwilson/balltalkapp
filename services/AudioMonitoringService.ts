@@ -1,9 +1,9 @@
 import ErrorHandlingService from './ErrorHandlingService';
-import { LogLevel, PerformanceMetric } from '../models/monitoring/MonitoringModels';
+import { LogLevel, PerformanceMetric } from '../../models/monitoring/MonitoringModels';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system';
 import { Platform } from 'react-native';
-import { RecordingFormat, RecordingQuality } from '../contexts/RecordingContext';
+import { RecordingFormat, RecordingQuality } from '../../contexts/RecordingContext';
 import NetInfo from '@react-native-community/netinfo';
 
 // Constants

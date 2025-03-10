@@ -3,12 +3,12 @@ import { View, Text, StyleSheet, Animated, TouchableOpacity, Platform } from 're
 import { Ionicons } from '@expo/vector-icons';
 import { useNetwork } from '../contexts/NetworkContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useAppTheme } from './ThemeProvider';
+import { useTheme } from '../hooks/useTheme';
 
 const OfflineIndicator: React.FC = React.memo(() => {
   const { isConnected, isInternetReachable, showOfflineBanner, hideOfflineBanner } = useNetwork();
   const insets = useSafeAreaInsets();
-  const { theme } = useAppTheme();
+  const { theme } = useTheme();
   
   const animation = useRef(new Animated.Value(0)).current;
   
@@ -19,7 +19,7 @@ const OfflineIndicator: React.FC = React.memo(() => {
     Animated.timing(animation, {
       toValue: shouldShow ? 1 : 0,
       duration: 300,
-      useNativeDriver: true,
+      useNativeDriver: Platform.OS !== 'web', // Only use native driver on native platforms
     }).start();
   }, [isConnected, isInternetReachable, showOfflineBanner, animation]);
   
@@ -71,11 +71,17 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingBottom: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 5,
+    // Replace shadowX props with boxShadow for web or keep shadowX for native
+    ...(Platform.OS === 'web' 
+      ? { boxShadow: '0px 2px 4px rgba(0, 0, 0, 0.3)' } 
+      : {
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 2 },
+          shadowOpacity: 0.3,
+          shadowRadius: 4,
+          elevation: 5,
+        }
+    ),
   },
   content: {
     flexDirection: 'row',

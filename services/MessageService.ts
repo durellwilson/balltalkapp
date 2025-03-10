@@ -27,6 +27,14 @@ import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import UserService from './UserService';
 
+// Add debug logging
+const DEBUG = true;
+const logDebug = (message: string, data?: any) => {
+  if (DEBUG) {
+    console.log(`[MessageService] ${message}`, data || '');
+  }
+};
+
 // Message interface
 export interface MessageReaction {
   emoji: string;
@@ -668,47 +676,103 @@ class MessageService {
 
   // Get all conversations for a user
   async getUserConversations(userId: string): Promise<Conversation[]> {
-    try {
-      // Validate input
-      if (!userId) {
-        console.error('getUserConversations: userId is required');
-        return [];
-      }
+    if (!userId) {
+      console.error('[MessageService] getUserConversations called with invalid userId');
+      return [];
+    }
 
-      const conversationsRef = collection(db, this.CONVERSATIONS_COLLECTION);
+    logDebug(`Getting conversations for user: ${userId}`);
+    
+    try {
+      // Check if we're online
+      if (!this.isOnline()) {
+        logDebug('Device is offline, trying to load from cache');
+        const cachedConversations = await this.loadCachedConversations(userId);
+        if (cachedConversations && cachedConversations.length > 0) {
+          return cachedConversations;
+        }
+      }
       
-      // Use a simpler query that matches the existing index
+      const conversationsRef = collection(db, this.CONVERSATIONS_COLLECTION);
       const q = query(
         conversationsRef,
-        where('participants', 'array-contains', userId)
+        where('participants', 'array-contains', userId),
+        orderBy('updatedAt', 'desc')
       );
-
+      
       const querySnapshot = await getDocs(q);
+      
+      if (querySnapshot.empty) {
+        logDebug('No conversations found for user');
+        return [];
+      }
+      
       const conversations: Conversation[] = [];
-
-      querySnapshot.forEach((doc) => {
+      
+      for (const doc of querySnapshot.docs) {
         const conversationData = doc.data();
         conversations.push({
           id: doc.id,
-          participants: conversationData.participants || [],
-          lastMessage: conversationData.lastMessage || null,
-          createdAt: conversationData.createdAt || new Date().toISOString(),
-          updatedAt: conversationData.updatedAt || new Date().toISOString(),
-          isGroupChat: conversationData.isGroupChat || false,
-          groupName: conversationData.groupName,
-          groupAdminId: conversationData.groupAdminId,
-          unreadCount: conversationData.unreadCount || {},
-          isAthleteOnly: conversationData.isAthleteOnly || false,
-          isFanGroup: conversationData.isFanGroup || false,
-          isMonetized: conversationData.isMonetized || false,
-        });
-      });
-
+          ...conversationData,
+        } as Conversation);
+      }
+      
+      logDebug(`Found ${conversations.length} conversations`);
+      
+      // Cache conversations for offline use
+      await this.cacheConversations(userId, conversations);
+      
       return conversations;
     } catch (error) {
-      console.error('Error getting user conversations:', error);
-      // Return empty array instead of throwing to prevent app crashes
-      return [];
+      console.error('[MessageService] Error getting user conversations:', error);
+      
+      // Try to load from cache if available
+      const cachedConversations = await this.loadCachedConversations(userId);
+      if (cachedConversations && cachedConversations.length > 0) {
+        logDebug('Returning cached conversations due to error');
+        return cachedConversations;
+      }
+      
+      throw error;
+    }
+  }
+
+  // Add methods to cache conversations for offline use
+  private async cacheConversations(userId: string, conversations: Conversation[]): Promise<void> {
+    try {
+      await AsyncStorage.setItem(
+        `user_conversations_${userId}`,
+        JSON.stringify({
+          conversations,
+          timestamp: new Date().toISOString(),
+        })
+      );
+      logDebug('Cached conversations successfully');
+    } catch (error) {
+      console.error('[MessageService] Error caching conversations:', error);
+    }
+  }
+
+  private async loadCachedConversations(userId: string): Promise<Conversation[] | null> {
+    try {
+      const cachedData = await AsyncStorage.getItem(`user_conversations_${userId}`);
+      if (!cachedData) return null;
+      
+      const { conversations, timestamp } = JSON.parse(cachedData);
+      const cacheTime = new Date(timestamp);
+      const now = new Date();
+      
+      // Check if cache is older than 1 hour
+      if (now.getTime() - cacheTime.getTime() > 60 * 60 * 1000) {
+        logDebug('Cached conversations are too old');
+        return null;
+      }
+      
+      logDebug('Loaded cached conversations successfully');
+      return conversations;
+    } catch (error) {
+      console.error('[MessageService] Error loading cached conversations:', error);
+      return null;
     }
   }
 
@@ -1915,6 +1979,21 @@ class MessageService {
       return !querySnapshot.empty;
     } catch (error) {
       console.error('[MessageService] Error checking fan group subscription:', error);
+      return false;
+    }
+  }
+
+  // Add a method to check if Firebase is properly initialized
+  async checkFirebaseConnection(): Promise<boolean> {
+    try {
+      logDebug('Checking Firebase connection...');
+      // Try to access Firestore
+      const testDoc = doc(db, 'system', 'status');
+      await getDoc(testDoc);
+      logDebug('Firebase connection successful');
+      return true;
+    } catch (error) {
+      console.error('[MessageService] Firebase connection error:', error);
       return false;
     }
   }

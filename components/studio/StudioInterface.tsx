@@ -13,6 +13,21 @@ import {
 } from 'react-native';
 import { Audio, InterruptionModeAndroid, InterruptionModeIOS } from 'expo-av';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
+import Animated, { 
+  useSharedValue, 
+  useAnimatedStyle, 
+  withTiming, 
+  withSpring, 
+  withSequence,
+  Easing,
+  FadeIn,
+  FadeOut,
+  SlideInRight,
+  SlideOutLeft,
+  ZoomIn,
+  ZoomOut,
+  SlideInUp
+} from 'react-native-reanimated';
 import { useAuth } from '../../hooks/useAuth';
 import { useTheme } from '../../hooks/useTheme';
 import RecordingInterface from './RecordingInterface';
@@ -24,8 +39,14 @@ import DawService, { DawService as DawServiceClass } from '../../services/DawSer
 import { AudioStorageService } from '../../services/audio/AudioStorageService';
 import { AudioProcessingService } from '../../services/audio/AudioProcessingService';
 import { Project, Track, AudioProcessingOptions } from './StudioTypes';
-import Colors from '../../constants/Colors';
+import Colors from '@/constants/Colors';
 import AudioEffectsPanel from '../audio/processing/AudioEffectsPanel';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { useRouter } from 'expo-router';
+import { useStorage } from '../../hooks/useStorage';
+import { useToast } from '../../hooks/useToast';
+import BeatMaker from './BeatMaker';
+import VocalEffectsProcessor from './VocalEffectsProcessor';
 
 /**
  * StudioInterface Component
@@ -40,12 +61,17 @@ import AudioEffectsPanel from '../audio/processing/AudioEffectsPanel';
  * - Audio processing with professional controls
  * - Project management
  * - Collaboration tools
+ * - Beat making
+ * - Vocal effects processing
  * 
  * @returns {React.ReactElement} The StudioInterface component
  */
 const StudioInterface: React.FC = () => {
   const { user } = useAuth();
   const { theme, isDark } = useTheme();
+  const router = useRouter();
+  const { saveData, loadData, listSessions } = useStorage();
+  const { showToast } = useToast();
   
   // Ensure theme is available with fallback values - use a stable reference
   const safeTheme = useMemo(() => {
@@ -55,36 +81,65 @@ const StudioInterface: React.FC = () => {
       tint: '#007AFF',
       background: isDark ? '#121212' : '#FFFFFF',
       text: isDark ? '#FFFFFF' : '#000000',
-      textSecondary: isDark ? '#CCCCCC' : '#666666',
-      cardBackground: isDark ? '#333333' : '#F8F8F8',
-      border: isDark ? '#444444' : '#EEEEEE',
-      error: '#FF3B30',
-      success: '#34C759',
-      warning: '#FF9500',
+      textSecondary: isDark ? '#AAAAAA' : '#666666',
+      border: isDark ? '#333333' : '#EEEEEE',
       primary: '#007AFF',
       secondary: '#5856D6',
-      accent: '#FF2D55',
-      cardBackgroundLight: '#F8F8F8',
+      tertiary: '#FF9500',
+      success: '#34C759',
+      warning: '#FFCC00',
+      error: '#FF3B30',
+      info: '#5AC8FA',
+      cardBackground: isDark ? '#1C1C1E' : '#F2F2F7',
     };
   }, [theme, isDark]);
   
   const [currentProject, setCurrentProject] = useState<Project | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeView, setActiveView] = useState<'welcome' | 'record' | 'upload' | 'browse' | 'edit' | 'effects'>('welcome');
+  const [activeView, setActiveView] = useState<
+    'welcome' | 'record' | 'upload' | 'browse' | 'edit' | 'effects' | 'beatmaker' | 'vocaleffects'
+  >('welcome');
   const [audioUri, setAudioUri] = useState<string | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [playbackPosition, setPlaybackPosition] = useState(0);
   const [audioDuration, setAudioDuration] = useState(0);
+  const [processingOptions, setProcessingOptions] = useState<AudioProcessingOptions>({});
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingProgress, setProcessingProgress] = useState(0);
   const [currentPosition, setCurrentPosition] = useState(0);
-  const [trackTitle, setTrackTitle] = useState('');
+  const [trackTitle, setTrackTitle] = useState('New Track');
   const [sound, setSound] = useState<Audio.Sound | null>(null);
   const [isBuffering, setIsBuffering] = useState(false);
+  const [sessionId, setSessionId] = useState<string>('');
+  const [savedSessions, setSavedSessions] = useState<any[]>([]);
+  const [showSessionsPanel, setShowSessionsPanel] = useState<boolean>(false);
+  const [trackLayers, setTrackLayers] = useState<any[]>([]);
+  const [isSaving, setIsSaving] = useState<boolean>(false);
+  const [showExportOptions, setShowExportOptions] = useState<boolean>(false);
+  const [beatUrl, setBeatUrl] = useState<string | null>(null);
   
   const soundRef = useRef<Audio.Sound | null>(null);
   const positionUpdateInterval = useRef<NodeJS.Timeout | null>(null);
+  
+  // Animation values
+  const fadeAnim = useSharedValue(0);
+  const scaleAnim = useSharedValue(0.95);
+  const translateY = useSharedValue(20);
+  const trackOpacity = useSharedValue(1);
+  const trackScale = useSharedValue(1);
+  const trackTranslateY = useSharedValue(0);
+  
+  // Move the animated style to the top level
+  const trackAnimatedStyle = useAnimatedStyle(() => {
+    return {
+      opacity: trackOpacity.value,
+      transform: [
+        { scale: trackScale.value },
+        { translateY: trackTranslateY.value }
+      ]
+    };
+  });
   
   /**
    * Initialize audio session
@@ -189,7 +244,7 @@ const StudioInterface: React.FC = () => {
    * @param {number} duration - The duration of the recording in seconds
    */
   const handleRecordingComplete = async (recordingUri: string, duration: number) => {
-    console.log('Recording complete, loading audio:', recordingUri);
+    console.log('Recording complete, loading audio:', recordingUri, 'duration:', duration);
     
     let retryCount = 0;
     const maxRetries = 3;
@@ -241,6 +296,9 @@ const StudioInterface: React.FC = () => {
         const loaded = await loadAudio(recordingUri);
         if (!loaded) throw new Error('Failed to load audio for processing');
         
+        // Set audio duration
+        setAudioDuration(duration);
+        
         console.log('Audio loaded successfully, switching to edit view');
         setActiveView('edit');
         
@@ -248,23 +306,25 @@ const StudioInterface: React.FC = () => {
         setTimeout(() => {
           togglePlayback().catch(error => {
             console.error('Error auto-playing recording:', error);
-            setError('Failed to auto-play the recording');
           });
         }, 500);
         
-        return; // Success - exit the retry loop
-        
+        return;
       } catch (error) {
-        console.error(`Attempt ${retryCount + 1} failed:`, error);
+        console.error(`Attempt ${retryCount + 1}/${maxRetries} failed:`, error);
         retryCount++;
         
-        if (retryCount < maxRetries) {
-          console.log(`Retrying audio loading (attempt ${retryCount + 1}/${maxRetries})...`);
-          await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
+        if (retryCount >= maxRetries) {
+          console.error('Max retries reached, showing error');
+          setError(`Failed to load recording: ${error.message || 'Unknown error'}`);
+          Alert.alert(
+            'Error',
+            'Failed to load the recording. Please try again.',
+            [{ text: 'OK' }]
+          );
         } else {
-          console.error('Failed to load recorded audio after multiple attempts');
-          setError('Failed to load the recording. Please try again.');
-          setActiveView('welcome');
+          // Wait before retrying
+          await new Promise(resolve => setTimeout(resolve, 1000));
         }
       }
     }
@@ -308,69 +368,47 @@ const StudioInterface: React.FC = () => {
    * @returns {Promise<boolean>} Success status
    */
   const loadAudio = async (uri: string): Promise<boolean> => {
-    if (!uri) return false;
-    
     try {
-      console.log('Loading audio from URI:', uri);
       setIsLoading(true);
-      
-      // Configure audio session for optimal playback
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: false,
-        playsInSilentModeIOS: true,
-        staysActiveInBackground: true,
-        interruptionModeIOS: InterruptionModeIOS.DuckOthers,
-        interruptionModeAndroid: InterruptionModeAndroid.DuckOthers,
-        shouldDuckAndroid: true,
-        playThroughEarpieceAndroid: false,
-      });
+      setError(null);
       
       // Unload any existing sound
-      if (soundRef.current) {
-        console.log('Unloading previous sound');
-        await soundRef.current.unloadAsync();
-        soundRef.current = null;
+      if (sound) {
+        await sound.unloadAsync();
       }
       
-      // Clear any existing interval
-      if (positionUpdateInterval.current) {
-        clearInterval(positionUpdateInterval.current);
-        positionUpdateInterval.current = null;
-      }
+      console.log('Loading audio from URI:', uri);
       
-      // Load the sound
-      console.log('Creating sound object from URI');
-      const { sound, status } = await Audio.Sound.createAsync(
+      // Create a new sound object
+      const { sound: newSound } = await Audio.Sound.createAsync(
         { uri },
         { 
-          progressUpdateIntervalMillis: 100,
-          positionMillis: 0,
           shouldPlay: false,
-          rate: 1.0,
-          shouldCorrectPitch: true,
+          progressUpdateIntervalMillis: 100, // Update position more frequently (100ms)
+          positionMillis: 0,
           volume: 1.0,
-          isMuted: false
         },
         onPlaybackStatusUpdate
       );
       
-      // Store the sound reference
-      soundRef.current = sound;
-      
-      // Set audio duration if available
-      if (status && 'durationMillis' in status && status.durationMillis) {
+      // Get initial status to set duration
+      const status = await newSound.getStatusAsync();
+      if (status.isLoaded) {
         setAudioDuration(status.durationMillis / 1000);
+        setPlaybackPosition(0);
+        setCurrentPosition(0);
+        console.log(`Audio loaded successfully. Duration: ${status.durationMillis / 1000}s`);
       }
       
-      // Set the audio URI
+      // Save the sound object
+      setSound(newSound);
       setAudioUri(uri);
-      
-      console.log('Audio loaded successfully');
       setIsLoading(false);
+      
       return true;
     } catch (error) {
       console.error('Error loading audio:', error);
-      setError(`Failed to load audio: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      setError(`Failed to load audio: ${error.message}`);
       setIsLoading(false);
       return false;
     }
@@ -389,15 +427,26 @@ const StudioInterface: React.FC = () => {
     }
 
     // Update state with current playback position and status
-    setCurrentPosition(status.positionMillis / 1000);
+    const currentPositionSeconds = status.positionMillis / 1000;
+    setCurrentPosition(currentPositionSeconds);
+    setPlaybackPosition(currentPositionSeconds);
+    
+    // Log position updates for debugging (only occasionally to avoid console spam)
+    if (Math.floor(currentPositionSeconds) % 5 === 0) {
+      console.log(`Playback position: ${currentPositionSeconds.toFixed(2)}s / ${audioDuration.toFixed(2)}s`);
+    }
+    
     setIsPlaying(status.isPlaying);
     setIsBuffering(status.isBuffering);
 
     // Handle playback completion
     if (status.didJustFinish) {
+      console.log('Playback finished, resetting position');
       // Reset to start of track
       sound?.setPositionAsync(0).catch(console.error);
       setIsPlaying(false);
+      setPlaybackPosition(0);
+      setCurrentPosition(0);
     }
     
     // Log any playback errors to help debug
@@ -562,6 +611,167 @@ const StudioInterface: React.FC = () => {
     return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
   };
   
+  /**
+   * Load saved sessions on component mount
+   */
+  useEffect(() => {
+    const loadSavedSessions = async () => {
+      try {
+        const sessions = await listSessions('studio-sessions');
+        setSavedSessions(sessions);
+      } catch (error) {
+        console.error('Failed to load saved sessions:', error);
+      }
+    };
+    
+    loadSavedSessions();
+  }, []);
+  
+  /**
+   * Create a new session with a unique ID
+   */
+  const createNewSession = () => {
+    const newSessionId = `session-${Date.now()}`;
+    setSessionId(newSessionId);
+    setActiveView('welcome');
+    setTrackLayers([]);
+    setAudioUri('');
+    setTrackTitle('New Track');
+    
+    showToast('New session created', 'success');
+  };
+  
+  /**
+   * Save the current session
+   */
+  const saveSession = async () => {
+    if (!sessionId) {
+      createNewSession();
+      return;
+    }
+    
+    setIsSaving(true);
+    
+    try {
+      const sessionData = {
+        id: sessionId,
+        title: trackTitle || 'Untitled Session',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        audioUri,
+        trackLayers,
+        processingOptions: {},
+        duration: audioDuration,
+      };
+      
+      await saveData(`studio-sessions/${sessionId}`, sessionData);
+      
+      // Refresh sessions list
+      const sessions = await listSessions('studio-sessions');
+      setSavedSessions(sessions);
+      
+      showToast('Session saved successfully', 'success');
+    } catch (error) {
+      console.error('Failed to save session:', error);
+      showToast('Failed to save session', 'error');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+  
+  /**
+   * Load a saved session
+   */
+  const loadSession = async (id: string) => {
+    try {
+      const sessionData = await loadData(`studio-sessions/${id}`);
+      
+      if (sessionData) {
+        setSessionId(id);
+        setTrackTitle(sessionData.title || 'Untitled Session');
+        setAudioUri(sessionData.audioUri || '');
+        setTrackLayers(sessionData.trackLayers || []);
+        setProcessingOptions(sessionData.processingOptions || {});
+        setAudioDuration(sessionData.duration || 0);
+        
+        // Load the audio if available
+        if (sessionData.audioUri) {
+          await loadAudio(sessionData.audioUri);
+          setActiveView('edit');
+        } else {
+          setActiveView('welcome');
+        }
+        
+        showToast('Session loaded successfully', 'success');
+      }
+    } catch (error) {
+      console.error('Failed to load session:', error);
+      showToast('Failed to load session', 'error');
+    }
+  };
+  
+  /**
+   * Handle adding a new layer from the recording interface
+   */
+  const handleLayerAdded = (uri: string, duration: number) => {
+    const newLayer = {
+      id: `layer-${Date.now()}`,
+      uri,
+      duration,
+      volume: 1,
+      pan: 0,
+      muted: false,
+      solo: false,
+    };
+    
+    setTrackLayers(prev => [...prev, newLayer]);
+    showToast('New layer added', 'success');
+  };
+  
+  /**
+   * Export the current project
+   */
+  const exportProject = async (format: 'mp3' | 'wav' = 'mp3', quality: 'high' | 'medium' | 'low' = 'high') => {
+    if (!audioUri) {
+      showToast('No audio to export', 'error');
+      return;
+    }
+    
+    setIsProcessing(true);
+    
+    try {
+      // In a real implementation, this would use a proper audio export service
+      // For now, we'll just simulate the export process
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      showToast(`Project exported as ${format.toUpperCase()} (${quality} quality)`, 'success');
+      setShowExportOptions(false);
+    } catch (error) {
+      console.error('Failed to export project:', error);
+      showToast('Failed to export project', 'error');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+  
+  /**
+   * Handle beat creation from the BeatMaker component
+   */
+  const handleBeatCreated = (url: string) => {
+    setBeatUrl(url);
+    showToast('Beat created successfully', 'success');
+    setActiveView('edit');
+  };
+  
+  /**
+   * Handle vocal effects processing completion
+   */
+  const handleVocalEffectsComplete = (processedUri: string) => {
+    setAudioUri(processedUri);
+    showToast('Vocal effects applied successfully', 'success');
+    setActiveView('edit');
+  };
+  
   // Use useEffect with proper dependencies
   useEffect(() => {
     // Initialize audio when component mounts
@@ -592,16 +802,77 @@ const StudioInterface: React.FC = () => {
     };
   }, [initializeAudio, loadCurrentProject, user]);
   
-  /**
-   * Render the welcome screen with options
-   * @returns {React.ReactElement} The welcome screen component
-   */
+  // Enhanced renderWelcomeScreen with animations
   const renderWelcomeScreen = () => (
-    <View style={[styles.welcomeContainer, { backgroundColor: safeTheme.cardBackground }]}>
-      <Text style={[styles.welcomeTitle, { color: safeTheme.text }]}>Studio</Text>
-      <Text style={[styles.welcomeSubtitle, { color: safeTheme.textSecondary }]}>
-        Create, record, and share your music
-      </Text>
+    <Animated.View 
+      style={[
+        styles.welcomeContainer,
+        { entering: FadeIn.duration(500) }
+      ]}
+    >
+      <View style={styles.welcomeHeader}>
+        <Text style={[styles.welcomeTitle, { color: safeTheme.text }]}>
+          BallTalk Studio
+        </Text>
+        
+        <TouchableOpacity
+          style={[styles.sessionButton, { backgroundColor: safeTheme.primary }]}
+          onPress={() => setShowSessionsPanel(!showSessionsPanel)}
+        >
+          <Ionicons name="folder-open" size={20} color="#FFFFFF" />
+          <Text style={styles.sessionButtonText}>Sessions</Text>
+        </TouchableOpacity>
+      </View>
+      
+      {showSessionsPanel && (
+        <Animated.View 
+          style={[
+            styles.sessionsPanel,
+            { entering: SlideInUp.duration(300) }
+          ]}
+        >
+          <View style={styles.sessionsPanelHeader}>
+            <Text style={[styles.sessionsPanelTitle, { color: safeTheme.text }]}>
+              Saved Sessions
+            </Text>
+            <TouchableOpacity
+              style={styles.newSessionButton}
+              onPress={createNewSession}
+            >
+              <Ionicons name="add-circle" size={24} color={safeTheme.primary} />
+            </TouchableOpacity>
+          </View>
+          
+          <ScrollView style={styles.sessionsList}>
+            {savedSessions.length === 0 ? (
+              <Text style={[styles.noSessionsText, { color: safeTheme.textSecondary }]}>
+                No saved sessions found
+              </Text>
+            ) : (
+              savedSessions.map((session, index) => (
+                <TouchableOpacity
+                  key={index}
+                  style={[
+                    styles.sessionItem,
+                    { borderColor: safeTheme.border }
+                  ]}
+                  onPress={() => loadSession(session.id)}
+                >
+                  <View style={styles.sessionItemContent}>
+                    <Text style={[styles.sessionItemTitle, { color: safeTheme.text }]}>
+                      {session.title || 'Untitled Session'}
+                    </Text>
+                    <Text style={[styles.sessionItemDate, { color: safeTheme.textSecondary }]}>
+                      {new Date(session.updatedAt).toLocaleDateString()}
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={20} color={safeTheme.textSecondary} />
+                </TouchableOpacity>
+              ))
+            )}
+          </ScrollView>
+        </Animated.View>
+      )}
       
       <View style={styles.optionsContainer}>
         <TouchableOpacity
@@ -621,369 +892,551 @@ const StudioInterface: React.FC = () => {
         </TouchableOpacity>
         
         <TouchableOpacity
-          style={[styles.optionButton, { backgroundColor: safeTheme.accent }]}
+          style={[styles.optionButton, { backgroundColor: safeTheme.tertiary }]}
           onPress={() => setActiveView('browse')}
         >
           <Ionicons name="albums" size={32} color="#FFFFFF" />
           <Text style={styles.optionButtonText}>Browse</Text>
         </TouchableOpacity>
+      </View>
+      
+      <TouchableOpacity
+        style={[styles.beatMakerButton, { backgroundColor: safeTheme.info }]}
+        onPress={() => setActiveView('beatmaker')}
+      >
+        <Ionicons name="musical-notes" size={24} color="#FFFFFF" />
+        <Text style={styles.beatMakerButtonText}>Beat Maker</Text>
+      </TouchableOpacity>
+      
+      <View style={styles.featuresContainer}>
+        <View style={styles.featureItem}>
+          <Ionicons name="layers" size={24} color={safeTheme.primary} />
+          <Text style={[styles.featureText, { color: safeTheme.text }]}>
+            Multi-track Recording
+          </Text>
+        </View>
         
-        <TouchableOpacity
-          style={[styles.optionButton, { backgroundColor: '#5856D6' }]}
-          onPress={() => setActiveView('effects')}
-        >
-          <Ionicons name="options" size={32} color="#FFFFFF" />
-          <Text style={styles.optionButtonText}>Effects</Text>
-        </TouchableOpacity>
-      </View>
-      
-      {/* Test section for demo purposes */}
-      <View style={styles.testSection}>
-        <Text style={[styles.testSectionTitle, { color: safeTheme.text }]}>
-          🎉 New Feature: Audio Effects
-        </Text>
-        <Text style={[styles.testSectionDescription, { color: safeTheme.textSecondary }]}>
-          Try our new professional audio effects panel with presets, real-time preview, and advanced controls.
-        </Text>
-        <TouchableOpacity
-          style={styles.testButton}
-          onPress={() => {
-            // Load a demo track if none is loaded
-            if (!audioUri) {
-              // Use a local demo track from assets
-              const demoTrack = require('../../assets/audio/demo-track.mp3');
-              loadAudio(demoTrack).then(success => {
-                if (success) {
-                  setActiveView('effects');
-                } else {
-                  // If demo track fails to load, show an alert
-                  Alert.alert(
-                    'Demo Track Unavailable',
-                    'Please record or upload a track first to try the audio effects.',
-                    [{ text: 'OK' }]
-                  );
-                }
-              });
-            } else {
-              setActiveView('effects');
-            }
-          }}
-        >
-          <Ionicons name="flash" size={20} color="#FFFFFF" />
-          <Text style={styles.testButtonText}>Try Audio Effects</Text>
-        </TouchableOpacity>
-      </View>
-      
-      {error && (
-        <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>{error}</Text>
-        </View>
-      )}
-      
-      {currentProject && (
-        <View style={[styles.projectInfoContainer, { backgroundColor: safeTheme.cardBackgroundLight }]}>
-          <Text style={[styles.projectInfoTitle, { color: safeTheme.text }]}>
-            Current Project: {currentProject.name}
-          </Text>
-          <Text style={[styles.projectInfoDetail, { color: safeTheme.textSecondary }]}>
-            Tracks: {currentProject.tracks.length}
-          </Text>
-          <Text style={[styles.projectInfoDetail, { color: safeTheme.textSecondary }]}>
-            Last updated: {new Date(currentProject.updatedAt).toLocaleDateString()}
+        <View style={styles.featureItem}>
+          <Ionicons name="pulse" size={24} color={safeTheme.primary} />
+          <Text style={[styles.featureText, { color: safeTheme.text }]}>
+            Real-time Waveforms
           </Text>
         </View>
-      )}
-    </View>
+        
+        <View style={styles.featureItem}>
+          <Ionicons name="options" size={24} color={safeTheme.primary} />
+          <Text style={[styles.featureText, { color: safeTheme.text }]}>
+            Professional Effects
+          </Text>
+        </View>
+      </View>
+    </Animated.View>
   );
   
-  /**
-   * Render the audio editor with a more modern design
-   */
-  const renderAudioEditor = () => (
-    <View style={[styles.editorContainer, { backgroundColor: safeTheme.cardBackground }]}>
-      <View style={styles.waveformContainer}>
-        <AudioWaveform
-          uri={audioUri}
-          height={120}
-          width="100%"
-          color={safeTheme.tint}
-          style={styles.waveform}
-          onPress={seekTo}
-          currentPosition={currentPosition}
-          duration={audioDuration}
-        />
-        
-        <View style={[styles.positionIndicator, { pointerEvents: 'none' }]}>
-          <View 
-            style={[
-              styles.positionLine, 
-              { 
-                backgroundColor: safeTheme.tint,
-                left: `${(currentPosition / audioDuration) * 100}%` 
-              }
-            ]} 
-          />
-        </View>
-      </View>
+  // Enhanced renderAudioEditor with animations
+  const renderAudioEditor = () => {
+    // Create a drag gesture for tracks
+    const dragGesture = Gesture.Pan()
+      .onBegin(() => {
+        trackScale.value = withSpring(1.05);
+        trackOpacity.value = withTiming(0.8);
+      })
+      .onUpdate((event) => {
+        trackTranslateY.value = event.translationY;
+      })
+      .onEnd(() => {
+        trackTranslateY.value = withSpring(0);
+        trackScale.value = withSpring(1);
+        trackOpacity.value = withTiming(1);
+      });
       
-      <View style={styles.controlsRow}>
-        <Text style={[styles.timeText, { color: safeTheme.text }]}>
-          {formatTime(currentPosition)}
-        </Text>
-        
-        <TouchableOpacity 
-          style={[styles.playButton, isPlaying ? styles.pauseButton : null]}
-          onPress={togglePlayback}
-          disabled={!audioUri || isProcessing}
-        >
-          <Ionicons 
-            name={isBuffering ? "hourglass" : (isPlaying ? "pause" : "play")} 
-            size={30} 
-            color="#FFFFFF" 
-          />
-        </TouchableOpacity>
-        
-        <Text style={[styles.timeText, { color: safeTheme.text }]}>
-          {formatTime(audioDuration)}
-        </Text>
-      </View>
-      
-      <View style={styles.trackInfoContainer}>
-        <Text style={[styles.sectionTitle, { color: safeTheme.text }]}>
-          Track Information
-        </Text>
-        
-        <TextInput
-          style={[styles.input, { backgroundColor: safeTheme.inputBackground, color: safeTheme.text }]}
-          placeholder="Enter track title"
-          placeholderTextColor={safeTheme.textSecondary}
-          value={trackTitle}
-          onChangeText={setTrackTitle}
-        />
-        
-        <View style={styles.actionsRow}>
-          <TouchableOpacity
-            style={[styles.actionButton, { backgroundColor: safeTheme.primary }]}
-            onPress={() => setActiveView('record')}
-          >
-            <Ionicons name="mic" size={20} color="#FFFFFF" />
-            <Text style={styles.actionButtonText}>Record</Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity
-            style={[styles.actionButton, { backgroundColor: safeTheme.secondary }]}
-            onPress={() => setActiveView('effects')}
-          >
-            <Ionicons name="options" size={20} color="#FFFFFF" />
-            <Text style={styles.actionButtonText}>Effects</Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity
-            style={[styles.actionButton, { backgroundColor: safeTheme.accent }]}
-            onPress={() => saveTrack()}
-          >
-            <Ionicons name="save" size={20} color="#FFFFFF" />
-            <Text style={styles.actionButtonText}>Save</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      {error && (
-        <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>{error}</Text>
-        </View>
-      )}
-    </View>
-  );
-  
-  /**
-   * Render the audio effects screen
-   * @returns {React.ReactElement} The audio effects component
-   */
-  const renderEffectsView = () => {
     return (
-      <View style={[styles.editorContainer, { backgroundColor: safeTheme.cardBackground }]}>
-        <ScrollView style={styles.effectsScrollView} contentContainerStyle={styles.effectsScrollContent}>
-          <Text style={[styles.sectionTitle, { color: safeTheme.text }]}>
-            Audio Effects
-          </Text>
+      <Animated.View 
+        style={[
+          styles.editorContainer,
+          { entering: FadeIn.duration(500) }
+        ]}
+      >
+        <View style={styles.editorHeader}>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => setActiveView('welcome')}
+          >
+            <Ionicons name="arrow-back" size={24} color={safeTheme.text} />
+          </TouchableOpacity>
           
-          <Text style={[styles.sectionDescription, { color: safeTheme.textSecondary }]}>
-            Apply professional audio effects to your track
-          </Text>
+          <TextInput
+            style={[styles.trackTitleInput, { color: safeTheme.text, borderColor: safeTheme.border }]}
+            value={trackTitle}
+            onChangeText={setTrackTitle}
+            placeholder="Track Title"
+            placeholderTextColor={safeTheme.textSecondary}
+          />
           
-          {audioUri ? (
-            <AudioEffectsPanel 
-              audioUri={audioUri}
-              onProcessed={(processedUri) => {
-                // Update the audio URI with the processed version
-                setAudioUri(processedUri);
-                
-                // Show success message
-                Alert.alert(
-                  'Effects Applied',
-                  'Your audio has been processed successfully.',
-                  [{ text: 'OK' }]
-                );
-              }}
-              onError={(errorMessage) => {
-                // Show error message
-                setError(`Processing error: ${errorMessage}`);
-              }}
-            />
-          ) : (
-            <View style={styles.emptyStateContainer}>
-              <Ionicons 
-                name="musical-notes" 
-                size={64} 
-                color={isDark ? safeTheme.textSecondary : '#CCCCCC'} 
-              />
-              <Text style={[styles.emptyStateText, { color: safeTheme.text }]}>
-                No audio loaded. Record or upload a track first.
-              </Text>
-              <View style={styles.buttonRow}>
-                <TouchableOpacity
-                  style={[styles.actionButton, { backgroundColor: safeTheme.primary }]}
-                  onPress={() => setActiveView('record')}
-                >
-                  <Ionicons name="mic" size={20} color="#FFFFFF" />
-                  <Text style={styles.actionButtonText}>Record</Text>
-                </TouchableOpacity>
-                
-                <TouchableOpacity
-                  style={[styles.actionButton, { backgroundColor: safeTheme.secondary }]}
-                  onPress={() => setActiveView('upload')}
-                >
-                  <Ionicons name="cloud-upload" size={20} color="#FFFFFF" />
-                  <Text style={styles.actionButtonText}>Upload</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          )}
-          
-          <View style={styles.buttonRow}>
+          <View style={styles.editorHeaderButtons}>
             <TouchableOpacity
-              style={[styles.backButton, { backgroundColor: safeTheme.secondary }]}
-              onPress={() => setActiveView('editor')}
+              style={styles.headerButton}
+              onPress={saveSession}
+              disabled={isSaving}
             >
-              <Text style={styles.backButtonText}>Back to Editor</Text>
+              <Ionicons 
+                name="save" 
+                size={24} 
+                color={isSaving ? safeTheme.textSecondary : safeTheme.primary} 
+              />
+            </TouchableOpacity>
+            
+            <TouchableOpacity
+              style={styles.headerButton}
+              onPress={() => setShowExportOptions(!showExportOptions)}
+            >
+              <Ionicons name="share" size={24} color={safeTheme.primary} />
+            </TouchableOpacity>
+            
+            <TouchableOpacity
+              style={[styles.effectsButton, { backgroundColor: safeTheme.primary }]}
+              onPress={() => setActiveView('effects')}
+            >
+              <Ionicons name="options" size={20} color="#FFFFFF" />
+              <Text style={styles.effectsButtonText}>Effects</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity
+              style={[styles.vocalEffectsButton, { backgroundColor: safeTheme.secondary }]}
+              onPress={() => setActiveView('vocaleffects')}
+            >
+              <Ionicons name="mic" size={20} color="#FFFFFF" />
+              <Text style={styles.effectsButtonText}>Vocal FX</Text>
             </TouchableOpacity>
           </View>
-        </ScrollView>
-      </View>
-    );
-  };
-  
-  /**
-   * Render the recording view
-   * @returns {React.ReactElement} The recording component
-   */
-  const renderRecordingView = () => {
-    return (
-      <View style={[styles.recordingContainer, { backgroundColor: safeTheme.cardBackground }]}>
-        <RecordingInterface 
-          onRecordingComplete={(recordingUri) => {
-            // Set the new audio URI
-            setAudioUri(recordingUri);
-            
-            // Switch to the editor view
-            setActiveView('editor');
-          }}
-          existingTrackUri={audioUri} // Pass the existing track URI for overdubbing
-        />
-      </View>
-    );
-  };
-  
-  // Main render method
-  if (!user) {
-    return (
-      <View style={[styles.container, isDark && styles.containerDark]}>
-        <View style={styles.authPrompt}>
-          <Ionicons name="lock-closed" size={48} color={isDark ? '#FFFFFF' : '#000000'} />
-          <Text style={[styles.authTitle, isDark && styles.textLight]}>
-            Sign In Required
-          </Text>
-          <Text style={[styles.authDescription, isDark && styles.textLight]}>
-            Please sign in to access the studio features.
-          </Text>
-          <TouchableOpacity
-            style={styles.signInButton}
-            onPress={() => {
-              // Navigate to sign in screen
-            }}
+        </View>
+        
+        {showExportOptions && (
+          <Animated.View 
+            style={[
+              styles.exportPanel,
+              { entering: FadeIn.duration(300) }
+            ]}
           >
-            <Text style={styles.signInButtonText}>Sign In</Text>
+            <View style={styles.exportPanelHeader}>
+              <Text style={[styles.exportPanelTitle, { color: safeTheme.text }]}>
+                Export Options
+              </Text>
+              <TouchableOpacity
+                onPress={() => setShowExportOptions(false)}
+              >
+                <Ionicons name="close" size={24} color={safeTheme.text} />
+              </TouchableOpacity>
+            </View>
+            
+            <View style={styles.exportOptions}>
+              <TouchableOpacity
+                style={[styles.exportOption, { borderColor: safeTheme.border }]}
+                onPress={() => exportProject('mp3', 'high')}
+              >
+                <Ionicons name="musical-note" size={24} color={safeTheme.primary} />
+                <Text style={[styles.exportOptionText, { color: safeTheme.text }]}>
+                  MP3 (High Quality)
+                </Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={[styles.exportOption, { borderColor: safeTheme.border }]}
+                onPress={() => exportProject('wav', 'high')}
+              >
+                <Ionicons name="disc" size={24} color={safeTheme.primary} />
+                <Text style={[styles.exportOptionText, { color: safeTheme.text }]}>
+                  WAV (Lossless)
+                </Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={[styles.exportOption, { borderColor: safeTheme.border }]}
+                onPress={() => exportProject('mp3', 'medium')}
+              >
+                <Ionicons name="cloud-upload" size={24} color={safeTheme.primary} />
+                <Text style={[styles.exportOptionText, { color: safeTheme.text }]}>
+                  Share to BallTalk
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </Animated.View>
+        )}
+        
+        <View style={styles.waveformContainer}>
+          <AudioWaveform
+            uri={audioUri}
+            isPlaying={isPlaying}
+            position={playbackPosition}
+            duration={audioDuration}
+            onSeek={seekTo}
+            isDark={isDark}
+            theme={safeTheme}
+            height={150}
+            barWidth={3}
+            barSpacing={2}
+            sensitivity={7}
+            progressColor={safeTheme.primary}
+            waveformColor={safeTheme.text}
+          />
+        </View>
+        
+        {trackLayers.length > 0 && (
+          <View style={[styles.layersContainer, { marginTop: 20, marginBottom: 20, padding: 15 }]}>
+            <Text style={[styles.layersTitle, { 
+              color: safeTheme.text, 
+              fontSize: 18, 
+              fontWeight: 'bold', 
+              marginBottom: 15,
+              textAlign: 'center'
+            }]}>
+              Layers ({trackLayers.length})
+            </Text>
+            
+            <ScrollView 
+              horizontal 
+              style={[styles.layersList, { 
+                minHeight: 120,
+                paddingVertical: 10,
+                paddingHorizontal: 5
+              }]}
+              contentContainerStyle={{
+                alignItems: 'center',
+                justifyContent: 'center',
+                paddingHorizontal: 10
+              }}
+            >
+              {trackLayers.map((layer, index) => (
+                <GestureDetector key={index} gesture={dragGesture}>
+                  <Animated.View 
+                    style={[
+                      styles.layerItem,
+                      { 
+                        borderColor: safeTheme.border,
+                        backgroundColor: isDark ? 'rgba(50, 50, 50, 0.8)' : 'rgba(240, 240, 240, 0.8)',
+                        padding: 15,
+                        borderRadius: 12,
+                        marginHorizontal: 10,
+                        minWidth: 150,
+                        shadowColor: '#000',
+                        shadowOffset: { width: 0, height: 2 },
+                        shadowOpacity: 0.1,
+                        shadowRadius: 4,
+                        elevation: 3
+                      },
+                      trackAnimatedStyle
+                    ]}
+                  >
+                    <Text style={[styles.layerName, { 
+                      color: safeTheme.text,
+                      fontSize: 16,
+                      fontWeight: 'bold',
+                      marginBottom: 8
+                    }]}>
+                      Layer {index + 1}
+                    </Text>
+                    <Text style={[styles.layerDuration, { 
+                      color: safeTheme.textSecondary,
+                      fontSize: 14,
+                      marginBottom: 12
+                    }]}>
+                      {formatTime(layer.duration)}
+                    </Text>
+                    
+                    <View style={[styles.layerControls, { 
+                      flexDirection: 'row',
+                      justifyContent: 'space-between',
+                      alignItems: 'center'
+                    }]}>
+                      <TouchableOpacity
+                        style={[
+                          styles.layerControlButton,
+                          { 
+                            padding: 8,
+                            borderRadius: 8,
+                            backgroundColor: layer.muted ? safeTheme.error : safeTheme.primary,
+                          }
+                        ]}
+                        onPress={() => {
+                          // Toggle mute for this layer
+                          setTrackLayers(prev => 
+                            prev.map((l, i) => 
+                              i === index ? { ...l, muted: !l.muted } : l
+                            )
+                          );
+                        }}
+                      >
+                        <Ionicons 
+                          name={layer.muted ? "volume-mute" : "volume-high"} 
+                          size={18} 
+                          color="#FFFFFF" 
+                        />
+                      </TouchableOpacity>
+                      
+                      <TouchableOpacity
+                        style={[
+                          styles.layerControlButton,
+                          { 
+                            padding: 8,
+                            borderRadius: 8,
+                            backgroundColor: safeTheme.error,
+                            marginLeft: 8
+                          }
+                        ]}
+                        onPress={() => {
+                          // Remove this layer
+                          setTrackLayers(prev => prev.filter((_, i) => i !== index));
+                        }}
+                      >
+                        <Ionicons name="trash" size={18} color="#FFFFFF" />
+                      </TouchableOpacity>
+                    </View>
+                  </Animated.View>
+                </GestureDetector>
+              ))}
+            </ScrollView>
+          </View>
+        )}
+        
+        <View style={styles.playbackControls}>
+          <TouchableOpacity
+            onPress={() => seekTo(Math.max(0, playbackPosition - 5))}
+          >
+            <Ionicons name="play-back" size={28} color={safeTheme.text} />
+          </TouchableOpacity>
+          
+          <TouchableOpacity
+            style={[
+              styles.playPauseButton,
+              { backgroundColor: safeTheme.primary }
+            ]}
+            onPress={togglePlayback}
+          >
+            <Ionicons 
+              name={isPlaying ? "pause" : "play"} 
+              size={32} 
+              color="#FFFFFF" 
+            />
+          </TouchableOpacity>
+          
+          <TouchableOpacity
+            onPress={() => seekTo(Math.min(audioDuration, playbackPosition + 5))}
+          >
+            <Ionicons name="play-forward" size={28} color={safeTheme.text} />
           </TouchableOpacity>
         </View>
-      </View>
+        
+        <View style={styles.timeDisplay}>
+          <Text style={[styles.timeText, { color: safeTheme.text }]}>
+            {formatTime(playbackPosition)}
+          </Text>
+          <Text style={[styles.timeText, { color: safeTheme.textSecondary }]}>
+            / {formatTime(audioDuration)}
+          </Text>
+        </View>
+      </Animated.View>
     );
-  }
+  };
   
-  if (isLoading) {
+  // Enhanced renderEffectsView with animations
+  const renderEffectsView = () => {
     return (
-      <View style={[styles.container, isDark && styles.containerDark, styles.centerContent]}>
-        <ActivityIndicator size="large" color={Colors.primary} />
-        <Text style={[styles.loadingText, isDark && styles.textLight]}>
-          Loading Studio...
-        </Text>
-      </View>
+      <Animated.View 
+        style={[
+          styles.effectsContainer,
+          { entering: ZoomIn.duration(400) }
+        ]}
+      >
+        <View style={styles.effectsHeader}>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => setActiveView('edit')}
+          >
+            <Ionicons name="arrow-back" size={24} color={safeTheme.text} />
+          </TouchableOpacity>
+          
+          <Text style={[styles.effectsTitle, { color: safeTheme.text }]}>
+            Audio Effects
+          </Text>
+        </View>
+        
+        <AudioEffectsPanel
+          onApplyEffects={processAudio}
+          theme={safeTheme}
+          isProcessing={isProcessing}
+          processingProgress={processingProgress}
+        />
+      </Animated.View>
     );
-  }
+  };
   
-  if (error) {
+  // Enhanced renderRecordingView with animations
+  const renderRecordingView = () => {
     return (
-      <View style={[styles.container, isDark && styles.containerDark, styles.centerContent]}>
-        <Ionicons name="alert-circle" size={48} color="#FF3B30" />
-        <Text style={[styles.errorTitle, isDark && styles.textLight]}>
-          Error
-        </Text>
-        <Text style={[styles.errorMessage, isDark && styles.textLight]}>
-          {error}
-        </Text>
-        <TouchableOpacity
-          style={styles.retryButton}
-          onPress={() => {
-            setError(null);
-            loadCurrentProject();
-          }}
-        >
-          <Text style={styles.retryButtonText}>Retry</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
-  
-  return (
-    <View style={[styles.container, isDark && styles.containerDark]}>
-      {activeView === 'welcome' && renderWelcomeScreen()}
-      
-      {activeView === 'record' && (
+      <Animated.View 
+        style={[
+          styles.recordingContainer,
+          { entering: FadeIn.duration(500).easing(Easing.out(Easing.exp)) }
+        ]}
+      >
+        <View style={styles.recordingHeader}>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => setActiveView('welcome')}
+          >
+            <Ionicons name="arrow-back" size={24} color={safeTheme.text} />
+          </TouchableOpacity>
+          
+          <Text style={[styles.recordingTitle, { color: safeTheme.text }]}>
+            Record New Track
+          </Text>
+          
+          <TouchableOpacity
+            style={styles.saveSessionButton}
+            onPress={saveSession}
+            disabled={isSaving}
+          >
+            <Ionicons 
+              name="save" 
+              size={24} 
+              color={isSaving ? safeTheme.textSecondary : safeTheme.primary} 
+            />
+          </TouchableOpacity>
+        </View>
+        
         <RecordingInterface
           onRecordingComplete={handleRecordingComplete}
-          onCancel={() => setActiveView('welcome')}
+          onLayerAdded={handleLayerAdded}
+          showAdvancedControls={true}
+          theme={safeTheme}
         />
-      )}
-      
-      {activeView === 'upload' && (
+      </Animated.View>
+    );
+  };
+  
+  // Enhanced renderUploadView with animations
+  const renderUploadView = () => {
+    return (
+      <Animated.View 
+        style={[
+          styles.uploadContainer,
+          { entering: SlideInRight.duration(400) }
+        ]}
+      >
         <TrackUploader
           onUploadComplete={handleUploadComplete}
           onCancel={() => setActiveView('welcome')}
+          theme={safeTheme}
         />
-      )}
-      
-      {activeView === 'browse' && (
+      </Animated.View>
+    );
+  };
+  
+  // Enhanced renderBrowseView with animations
+  const renderBrowseView = () => {
+    return (
+      <Animated.View 
+        style={[
+          styles.browseContainer,
+          { entering: FadeIn.duration(400) }
+        ]}
+      >
         <TrackBrowser
           onTrackSelect={handleTrackSelect}
           onCancel={() => setActiveView('welcome')}
+          theme={safeTheme}
         />
+      </Animated.View>
+    );
+  };
+  
+  // Enhanced renderBeatMakerView with animations
+  const renderBeatMakerView = () => {
+    return (
+      <Animated.View 
+        style={[
+          styles.beatMakerContainer,
+          { entering: FadeIn.duration(500) }
+        ]}
+      >
+        <BeatMaker 
+          onBeatCreated={handleBeatCreated}
+          onClose={() => setActiveView('welcome')}
+          theme={safeTheme}
+        />
+      </Animated.View>
+    );
+  };
+  
+  // Enhanced renderVocalEffectsView with animations
+  const renderVocalEffectsView = () => {
+    if (!audioUri) {
+      setActiveView('welcome');
+      showToast('No audio to process', 'error');
+      return null;
+    }
+    
+    return (
+      <Animated.View 
+        style={[
+          styles.vocalEffectsContainer,
+          { entering: FadeIn.duration(500) }
+        ]}
+      >
+        <VocalEffectsProcessor 
+          audioUri={audioUri}
+          onProcessingComplete={handleVocalEffectsComplete}
+          onClose={() => setActiveView('edit')}
+          theme={safeTheme}
+        />
+      </Animated.View>
+    );
+  };
+  
+  // Main render with animated transitions between views
+  return (
+    <View style={[styles.container, isDark && styles.containerDark]}>
+      {isLoading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={safeTheme.primary} />
+          <Text style={[styles.loadingText, { color: safeTheme.text }]}>
+            Loading Studio...
+          </Text>
+        </View>
+      ) : error ? (
+        <View style={styles.errorContainer}>
+          <Ionicons name="alert-circle" size={48} color={safeTheme.error} />
+          <Text style={[styles.errorText, { color: safeTheme.text }]}>
+            {error}
+          </Text>
+          <TouchableOpacity
+            style={[styles.retryButton, { backgroundColor: safeTheme.primary }]}
+            onPress={initializeAudio}
+          >
+            <Text style={styles.retryButtonText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <>
+          {activeView === 'welcome' && renderWelcomeScreen()}
+          {activeView === 'record' && renderRecordingView()}
+          {activeView === 'upload' && renderUploadView()}
+          {activeView === 'browse' && renderBrowseView()}
+          {activeView === 'edit' && renderAudioEditor()}
+          {activeView === 'effects' && renderEffectsView()}
+          {activeView === 'beatmaker' && renderBeatMakerView()}
+          {activeView === 'vocaleffects' && renderVocalEffectsView()}
+          
+          {isProcessing && (
+            <View style={styles.processingOverlay}>
+              <ActivityIndicator size="large" color={safeTheme.primary} />
+              <Text style={[styles.processingText, { color: "#FFFFFF" }]}>
+                Processing Audio...
+              </Text>
+            </View>
+          )}
+        </>
       )}
-      
-      {activeView === 'edit' && renderAudioEditor()}
-      
-      {activeView === 'effects' && renderEffectsView()}
-      
-      {activeView === 'recording' && renderRecordingView()}
     </View>
   );
 };
@@ -1012,126 +1465,141 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 20,
   },
-  welcomeTitle: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: '#000000',
-    textAlign: 'center',
-    marginBottom: 8,
-  },
-  welcomeSubtitle: {
-    fontSize: 18,
-    color: '#666666',
-    textAlign: 'center',
+  welcomeHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: 30,
+  },
+  welcomeTitle: {
+    fontSize: 28,
+    fontWeight: 'bold',
+  },
+  sessionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+  sessionButtonText: {
+    color: '#FFFFFF',
+    fontWeight: '600',
+    marginLeft: 8,
+  },
+  sessionsPanel: {
+    backgroundColor: 'rgba(0,0,0,0.05)',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 20,
+  },
+  sessionsPanelHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  sessionsPanelTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  newSessionButton: {
+    padding: 4,
+  },
+  sessionsList: {
+    maxHeight: 200,
+  },
+  noSessionsText: {
+    textAlign: 'center',
+    padding: 20,
   },
   optionsContainer: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-around',
+    justifyContent: 'space-between',
     marginBottom: 30,
   },
   optionButton: {
-    width: width / 2 - 30,
-    height: 100,
-    borderRadius: 12,
+    width: '30%',
+    aspectRatio: 1,
+    borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
+    shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
-    margin: 10,
   },
   optionButtonText: {
     color: '#FFFFFF',
+    fontWeight: '600',
     marginTop: 8,
-    fontWeight: '500',
   },
-  projectInfoContainer: {
-    width: '100%',
-    padding: 16,
-    borderRadius: 8,
+  featuresContainer: {
     marginTop: 20,
   },
-  projectInfoTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 8,
-  },
-  projectInfoDetail: {
-    fontSize: 14,
-    marginBottom: 4,
-  },
-  
-  // Auth prompt styles
-  authPrompt: {
-    flex: 1,
-    justifyContent: 'center',
+  featureItem: {
+    flexDirection: 'row',
     alignItems: 'center',
+    marginBottom: 16,
+  },
+  featureText: {
+    marginLeft: 12,
+    fontSize: 16,
+  },
+  recordingContainer: {
+    flex: 1,
     padding: 20,
   },
-  authTitle: {
+  recordingHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 20,
+  },
+  recordingTitle: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#000000',
-    marginTop: 16,
-    marginBottom: 8,
+    marginLeft: 20,
   },
-  authDescription: {
-    fontSize: 16,
-    color: '#666666',
-    textAlign: 'center',
-    marginBottom: 24,
+  saveSessionButton: {
+    padding: 8,
   },
-  signInButton: {
-    backgroundColor: Colors.primary,
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 8,
-  },
-  signInButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  
-  // Loading and error styles
-  loadingText: {
-    fontSize: 18,
-    color: '#000000',
-    marginTop: 16,
-  },
-  errorTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#000000',
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  errorMessage: {
-    fontSize: 16,
-    color: '#666666',
-    textAlign: 'center',
-    marginBottom: 24,
-  },
-  retryButton: {
-    backgroundColor: Colors.primary,
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 8,
-  },
-  retryButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  
-  // Editor styles
   editorContainer: {
     flex: 1,
     padding: 20,
+  },
+  editorHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  trackTitleInput: {
+    width: '70%',
+    height: 44,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    marginBottom: 12,
+    fontSize: 16,
+    borderWidth: 1,
+    borderColor: '#EEEEEE',
+  },
+  editorHeaderButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  headerButton: {
+    padding: 8,
+    marginRight: 8,
+  },
+  effectsButton: {
+    padding: 10,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  effectsButtonText: {
+    color: '#FFFFFF',
+    fontWeight: '600',
   },
   waveformContainer: {
     position: 'relative',
@@ -1271,9 +1739,172 @@ const styles = StyleSheet.create({
   effectsScrollContent: {
     padding: 20,
   },
-  recordingContainer: {
+  uploadContainer: {
     flex: 1,
     padding: 20,
+  },
+  browseContainer: {
+    flex: 1,
+    padding: 20,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    fontSize: 18,
+    color: '#000000',
+    marginTop: 16,
+  },
+  retryButton: {
+    backgroundColor: Colors.primary,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+  },
+  retryButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  processingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  processingText: {
+    marginTop: 16,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  beatMakerContainer: {
+    flex: 1,
+  },
+  beatMakerButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 25,
+    marginTop: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  beatMakerButtonText: {
+    color: '#FFFFFF',
+    fontWeight: '600',
+    fontSize: 16,
+    marginLeft: 8,
+  },
+  vocalEffectsContainer: {
+    flex: 1,
+  },
+  vocalEffectsButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 10,
+    borderRadius: 8,
+    marginLeft: 8,
+  },
+  layersContainer: {
+    marginTop: 20,
+    marginBottom: 20,
+  },
+  layersTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 10,
+  },
+  layersList: {
+    minHeight: 100,
+  },
+  layerItem: {
+    padding: 10,
+    borderWidth: 1,
+    borderColor: '#EEEEEE',
+    borderRadius: 8,
+  },
+  layerName: {
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  layerDuration: {
+    fontSize: 14,
+    color: '#666666',
+  },
+  layerControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 10,
+  },
+  layerControlButton: {
+    padding: 4,
+    borderRadius: 8,
+  },
+  playPauseButton: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#FF9500',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  effectsContainer: {
+    flex: 1,
+  },
+  effectsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 20,
+  },
+  effectsTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+  },
+  exportPanel: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  exportPanelHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 20,
+  },
+  exportPanelTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+  },
+  exportOptions: {
+    padding: 20,
+  },
+  exportOption: {
+    padding: 10,
+    borderWidth: 1,
+    borderColor: '#EEEEEE',
+    borderRadius: 8,
+    marginBottom: 10,
+  },
+  exportOptionText: {
+    fontSize: 16,
+    fontWeight: 'bold',
   },
 });
 

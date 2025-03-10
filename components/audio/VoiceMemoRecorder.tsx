@@ -15,7 +15,7 @@ import { Audio } from 'expo-av';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import * as FileSystem from 'expo-file-system';
 import { useTheme } from '../../hooks/useTheme';
-import Colors from '../../constants/Colors';
+import Colors from '@/constants/Colors';
 
 interface VoiceMemoRecorderProps {
   onRecordingComplete: (uri: string, duration: number) => void;

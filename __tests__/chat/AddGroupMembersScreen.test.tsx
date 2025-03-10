@@ -4,7 +4,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useAuth } from '../../contexts/auth';
 import MessageService from '../../services/MessageService';
 import UserService from '../../services/UserService';
-import AddGroupMembersScreen from '../../screens/chat/AddGroupMembersScreen';
+import AddGroupMembersScreen from '../../app/chat/add-members';
 
 // Mock dependencies
 jest.mock('expo-router', () => ({

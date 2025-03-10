@@ -1,5 +1,5 @@
 import { Platform } from 'react-native';
-import { DeviceSettings } from '../services/TestAccountsService';
+import { DeviceSettings } from '../../services/TestAccountsService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Default network timers (in ms)

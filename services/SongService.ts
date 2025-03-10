@@ -1,4 +1,4 @@
-import { Song, Playlist, SongComment } from '../models/Song';
+import { Song, Playlist, SongComment } from '../../models/Song';
 import { db, storage } from '../src/lib/firebase';
 import { collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, query, where, orderBy, limit, increment } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL, deleteObject, uploadBytesResumable } from 'firebase/storage';

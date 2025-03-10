@@ -1,6 +1,6 @@
 import React from 'react';
 import { SafeAreaView, StatusBar, StyleSheet } from 'react-native';
-import FanHubSignup from '../../components/auth/FanHubSignup';
+import FanHubSignup from '../../components/auth/FanHubSignup'; // Updated import path
 
 export default function FanHubScreen() {
   return (

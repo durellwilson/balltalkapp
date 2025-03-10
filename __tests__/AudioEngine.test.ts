@@ -1,4 +1,4 @@
-import AudioEngine from '../services/audio/AudioEngine';
+import AudioEngine from '../../services/audio/AudioEngine';
 
 describe('AudioEngine', () => {
   let audioEngine: AudioEngine;

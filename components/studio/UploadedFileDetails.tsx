@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import { Audio } from 'expo-av';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
-import { PRIMARY, NEUTRAL_100, NEUTRAL_200, NEUTRAL_400, NEUTRAL_600, NEUTRAL_800 } from '../../constants/Colors';
+import { PRIMARY, NEUTRAL_100, NEUTRAL_200, NEUTRAL_400, NEUTRAL_600, NEUTRAL_800 } from '@/constants/Colors';
 
 interface UploadedFileDetailsProps {
   fileName: string;

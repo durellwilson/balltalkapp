@@ -43,7 +43,12 @@ export default function ConversationScreen() {
     });
 
     // Subscribe to messages
-    const messagesUnsubscribe = ChatService.getMessages(id, 50, (data) => {
+    const messagesUnsubscribe = ChatService.getMessages(id, 50, (data, error) => {
+      if (error) {
+        setError(error);
+        setLoading(false);
+        return;
+      }
       setMessages(data.sort((a, b) => {
         return b.timestamp.toMillis() - a.timestamp.toMillis();
       }));
@@ -51,7 +56,11 @@ export default function ConversationScreen() {
     });
 
     // Subscribe to typing status
-    const typingUnsubscribe = ChatService.getTypingStatus(id, (typingData) => {
+    const typingUnsubscribe = ChatService.getTypingStatus(id, (typingData, error) => {
+      if (error) {
+        console.error('Error fetching typing status:', error);
+        return;
+      }
       // Filter out the current user
       setTypingUsers(typingData.filter(status => status.userId !== user.uid));
     });
@@ -69,7 +78,11 @@ export default function ConversationScreen() {
   useEffect(() => {
     if (!user || !id) return;
 
-    const unsubscribe = ChatService.getConversations(user.uid, (conversations) => {
+    const unsubscribe = ChatService.getConversations(user.uid, (conversations, error) => {
+      if (error) {
+        setError(error);
+        return;
+      }
       const currentConversation = conversations.find(conv => conv.id === id);
       if (currentConversation) {
         setConversation(currentConversation);
@@ -82,23 +95,34 @@ export default function ConversationScreen() {
   }, [user, id]);
 
   const handleSendMessage = async () => {
-    if (!user || !id || !messageText.trim() || sending) return;
-
+    if (!messageText.trim() || !user || !id || sending) return;
+    
+    const trimmedMessage = messageText.trim();
+    setMessageText('');
+    setSending(true);
+    
     try {
-      setSending(true);
-      await ChatService.sendMessage({
-        conversationId: id,
+      await ChatService.sendMessage(id, {
+        text: trimmedMessage,
         senderId: user.uid,
-        text: messageText.trim()
+        senderName: user.displayName || 'User',
+        timestamp: new Date(),
       });
-      setMessageText('');
+      
       // Scroll to bottom after sending
       setTimeout(() => {
-        flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
+        flatListRef.current?.scrollToEnd({ animated: true });
       }, 100);
+      
     } catch (err) {
       console.error('Error sending message:', err);
-      setError(err as Error);
+      // Show the message text again if sending failed
+      setMessageText(trimmedMessage);
+      
+      // Show error toast or notification
+      if (!isOffline) {
+        setError(new Error('Failed to send message. Please try again.'));
+      }
     } finally {
       setSending(false);
     }
@@ -149,7 +173,7 @@ export default function ConversationScreen() {
   if (error) {
     return (
       <ErrorFallback 
-        message="Could not load conversation" 
+        message={error.message || "Something went wrong"} 
         onRetry={() => setError(null)} 
       />
     );
@@ -158,33 +182,40 @@ export default function ConversationScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <KeyboardAvoidingView 
-        style={styles.keyboardAvoidingView}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={styles.keyboardAvoidingView}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
       >
         <View style={styles.header}>
-          <TouchableOpacity 
-            style={styles.backButton}
-            onPress={handleBackPress}
-          >
-            <Ionicons name="chevron-back" size={24} color="#007AFF" />
+          <TouchableOpacity onPress={handleBackPress} style={styles.backButton}>
+            <Ionicons name="arrow-back" size={24} color="#007AFF" />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>
-            {conversation?.isGroup 
-              ? conversation.groupName 
-              : 'Direct Message'}
+          <Text style={styles.headerTitle} numberOfLines={1}>
+            {conversation?.groupName || conversation?.participants
+              .filter(p => p !== user?.uid)
+              .map(p => conversation?.participantNames?.[p] || 'User')
+              .join(', ')}
           </Text>
-          <View style={styles.headerRight}>
-            {conversation?.isPremium && (
-              <Ionicons name="star" size={18} color="#FFD700" style={styles.premiumIcon} />
-            )}
-          </View>
+          {loading ? (
+            <ActivityIndicator size="small" color="#007AFF" />
+          ) : (
+            <TouchableOpacity style={styles.infoButton}>
+              <Ionicons name="information-circle-outline" size={24} color="#007AFF" />
+            </TouchableOpacity>
+          )}
         </View>
 
+        {error && (
+          <ErrorFallback 
+            message={error.message || "Something went wrong"} 
+            onRetry={() => setError(null)} 
+          />
+        )}
+
         {isOffline && (
-          <View style={styles.offlineNotice}>
-            <Ionicons name="cloud-offline" size={16} color="white" />
-            <Text style={styles.offlineText}>You're offline. Messages will be sent when you're back online.</Text>
+          <View style={styles.offlineBanner}>
+            <Ionicons name="cloud-offline" size={16} color="#fff" />
+            <Text style={styles.offlineText}>You're offline. Messages will be sent when you reconnect.</Text>
           </View>
         )}
 
@@ -194,121 +225,91 @@ export default function ConversationScreen() {
             <Text style={styles.loadingText}>Loading messages...</Text>
           </View>
         ) : (
-          <>
-            <FlatList
-              ref={flatListRef}
-              data={messages}
-              keyExtractor={(item) => item.id || ''}
-              inverted
-              contentContainerStyle={styles.messagesList}
-              renderItem={({ item }) => {
-                const isMyMessage = item.senderId === user?.uid;
-                const messageTime = item.timestamp 
-                  ? formatDistanceToNow(item.timestamp.toDate(), { addSuffix: true })
-                  : '';
-                
-                return (
-                  <View style={[
-                    styles.messageContainer,
-                    isMyMessage ? styles.myMessageContainer : styles.otherMessageContainer
-                  ]}>
-                    <View style={[
-                      styles.messageBubble,
-                      isMyMessage ? styles.myMessageBubble : styles.otherMessageBubble
-                    ]}>
-                      <Text style={styles.messageText}>{item.text}</Text>
-                      <Text style={styles.messageTime}>{messageTime}</Text>
-                    </View>
-                    
-                    {/* Reactions */}
-                    {item.reactions && item.reactions.length > 0 && (
-                      <View style={styles.reactionsContainer}>
-                        {/* Group reactions by emoji */}
-                        {Object.entries(
-                          item.reactions.reduce((acc, reaction) => {
-                            acc[reaction.emoji] = (acc[reaction.emoji] || 0) + 1;
-                            return acc;
-                          }, {} as Record<string, number>)
-                        ).map(([emoji, count]) => (
-                          <TouchableOpacity 
-                            key={emoji}
-                            style={styles.reactionBubble}
-                            onPress={() => {
-                              // Toggle reaction
-                              const hasReacted = item.reactions?.some(
-                                r => r.userId === user?.uid && r.emoji === emoji
-                              );
-                              
-                              if (hasReacted) {
-                                handleRemoveReaction(item.id || '', emoji);
-                              } else {
-                                handleAddReaction(item.id || '', emoji);
-                              }
-                            }}
-                          >
-                            <Text style={styles.reactionEmoji}>{emoji}</Text>
-                            {count > 1 && (
-                              <Text style={styles.reactionCount}>{count}</Text>
-                            )}
-                          </TouchableOpacity>
-                        ))}
-                      </View>
-                    )}
-                    
-                    {/* Read receipts */}
-                    {isMyMessage && item.readBy && item.readBy.length > 1 && (
-                      <View style={styles.readReceiptContainer}>
-                        <Ionicons name="checkmark-done" size={14} color="#007AFF" />
-                        <Text style={styles.readReceiptText}>
-                          Read by {item.readBy.length - 1}
-                        </Text>
-                      </View>
-                    )}
-                  </View>
-                );
-              }}
-            />
-            
-            {/* Typing indicator */}
-            {typingUsers.length > 0 && (
-              <View style={styles.typingContainer}>
-                <View style={styles.typingBubble}>
-                  <Text style={styles.typingText}>
-                    {typingUsers.length === 1
-                      ? `${typingUsers[0].displayName} is typing...`
-                      : `${typingUsers.length} people are typing...`}
-                  </Text>
+          <FlatList
+            ref={flatListRef}
+            data={messages}
+            keyExtractor={(item) => item.id}
+            style={styles.messageList}
+            contentContainerStyle={styles.messageListContent}
+            inverted={false}
+            onLayout={() => {
+              // Scroll to bottom on initial load
+              flatListRef.current?.scrollToEnd({ animated: false });
+            }}
+            renderItem={({ item }) => (
+              <View style={[
+                styles.messageContainer,
+                item.senderId === user?.uid ? styles.sentMessage : styles.receivedMessage
+              ]}>
+                {item.senderId !== user?.uid && (
+                  <Text style={styles.senderName}>{item.senderName}</Text>
+                )}
+                <View style={[
+                  styles.messageBubble,
+                  item.senderId === user?.uid ? styles.sentBubble : styles.receivedBubble
+                ]}>
+                  <Text style={styles.messageText}>{item.text}</Text>
                 </View>
+                <Text style={styles.messageTime}>
+                  {item.timestamp ? formatDistanceToNow(item.timestamp.toDate(), { addSuffix: true }) : ''}
+                </Text>
+                
+                {/* Reactions */}
+                {item.reactions && Object.keys(item.reactions).length > 0 && (
+                  <View style={styles.reactionsContainer}>
+                    {Object.entries(item.reactions).map(([emoji, users]) => (
+                      <TouchableOpacity 
+                        key={emoji}
+                        style={styles.reactionBubble}
+                        onPress={() => 
+                          users.includes(user?.uid) 
+                            ? handleRemoveReaction(item.id, emoji)
+                            : handleAddReaction(item.id, emoji)
+                        }
+                      >
+                        <Text style={styles.reactionEmoji}>{emoji}</Text>
+                        <Text style={styles.reactionCount}>{users.length}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
               </View>
             )}
-            
-            {/* Message input */}
-            <View style={styles.inputContainer}>
-              <TextInput
-                style={styles.input}
-                placeholder="Type a message..."
-                value={messageText}
-                onChangeText={handleTextChange}
-                multiline
-                maxLength={1000}
-              />
-              <TouchableOpacity 
-                style={[
-                  styles.sendButton,
-                  (!messageText.trim() || sending) && styles.sendButtonDisabled
-                ]}
-                onPress={handleSendMessage}
-                disabled={!messageText.trim() || sending}
-              >
-                {sending ? (
-                  <ActivityIndicator size="small" color="white" />
-                ) : (
-                  <Ionicons name="send" size={20} color="white" />
-                )}
-              </TouchableOpacity>
-            </View>
-          </>
+          />
         )}
+
+        {typingUsers.length > 0 && (
+          <View style={styles.typingContainer}>
+            <ActivityIndicator size="small" color="#999" />
+            <Text style={styles.typingText}>
+              {typingUsers.length === 1 
+                ? `${typingUsers[0].displayName} is typing...` 
+                : `${typingUsers.length} people are typing...`}
+            </Text>
+          </View>
+        )}
+
+        <View style={styles.inputContainer}>
+          <TextInput
+            style={styles.input}
+            placeholder="Type a message..."
+            value={messageText}
+            onChangeText={handleTextChange}
+            multiline
+            maxLength={1000}
+          />
+          <TouchableOpacity 
+            style={[styles.sendButton, !messageText.trim() && styles.sendButtonDisabled]}
+            onPress={handleSendMessage}
+            disabled={!messageText.trim() || sending}
+          >
+            {sending ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <Ionicons name="send" size={20} color="#fff" />
+            )}
+          </TouchableOpacity>
+        </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -317,172 +318,167 @@ export default function ConversationScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8f8f8'
+    backgroundColor: '#f5f5f5',
   },
   keyboardAvoidingView: {
-    flex: 1
+    flex: 1,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: 'white',
+    padding: 10,
     borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0'
+    borderBottomColor: '#e0e0e0',
+    backgroundColor: '#fff',
   },
   backButton: {
-    padding: 8
+    padding: 5,
   },
   headerTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
     flex: 1,
-    textAlign: 'center'
+    fontSize: 18,
+    fontWeight: '600',
+    marginLeft: 10,
+    color: '#333',
   },
-  headerRight: {
-    width: 40,
-    alignItems: 'flex-end'
+  infoButton: {
+    padding: 5,
   },
-  premiumIcon: {
-    marginRight: 4
-  },
-  offlineNotice: {
+  offlineBanner: {
+    backgroundColor: '#ff9800',
+    padding: 8,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FF3B30',
-    padding: 8,
-    marginBottom: 8
+    justifyContent: 'center',
   },
   offlineText: {
-    color: 'white',
-    marginLeft: 8,
-    fontSize: 14
+    color: '#fff',
+    marginLeft: 5,
+    fontSize: 12,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
-    alignItems: 'center'
+    alignItems: 'center',
   },
   loadingText: {
-    marginTop: 12,
-    fontSize: 16,
-    color: '#666'
+    marginTop: 10,
+    color: '#666',
   },
-  messagesList: {
-    paddingHorizontal: 16,
-    paddingVertical: 8
+  messageList: {
+    flex: 1,
+  },
+  messageListContent: {
+    padding: 10,
+    paddingBottom: 20,
   },
   messageContainer: {
-    marginVertical: 4,
-    maxWidth: '80%'
+    marginBottom: 15,
+    maxWidth: '80%',
   },
-  myMessageContainer: {
-    alignSelf: 'flex-end'
+  sentMessage: {
+    alignSelf: 'flex-end',
   },
-  otherMessageContainer: {
-    alignSelf: 'flex-start'
+  receivedMessage: {
+    alignSelf: 'flex-start',
+  },
+  senderName: {
+    fontSize: 12,
+    color: '#666',
+    marginBottom: 2,
   },
   messageBubble: {
+    padding: 10,
     borderRadius: 18,
-    paddingHorizontal: 12,
-    paddingVertical: 8
+    maxWidth: '100%',
   },
-  myMessageBubble: {
+  sentBubble: {
     backgroundColor: '#007AFF',
   },
-  otherMessageBubble: {
+  receivedBubble: {
     backgroundColor: '#E5E5EA',
   },
   messageText: {
     fontSize: 16,
-    color: 'white'
+    color: '#333',
+  },
+  sentBubble: {
+    backgroundColor: '#007AFF',
+  },
+  receivedBubble: {
+    backgroundColor: '#E5E5EA',
+  },
+  messageText: {
+    fontSize: 16,
+    color: props => props.sentBubble ? '#fff' : '#333',
   },
   messageTime: {
-    fontSize: 12,
-    color: 'rgba(255, 255, 255, 0.7)',
+    fontSize: 11,
+    color: '#999',
     marginTop: 4,
-    alignSelf: 'flex-end'
+    alignSelf: 'flex-end',
   },
   reactionsContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    marginTop: 4
+    marginTop: 5,
   },
   reactionBubble: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.1)',
+    backgroundColor: '#f0f0f0',
     borderRadius: 12,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    marginRight: 4,
-    marginBottom: 4
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    marginRight: 5,
+    marginBottom: 5,
   },
   reactionEmoji: {
-    fontSize: 14
+    fontSize: 14,
   },
   reactionCount: {
     fontSize: 12,
-    marginLeft: 4,
-    color: '#666'
-  },
-  readReceiptContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 4,
-    alignSelf: 'flex-end'
-  },
-  readReceiptText: {
-    fontSize: 12,
     color: '#666',
-    marginLeft: 4
+    marginLeft: 3,
   },
   typingContainer: {
-    paddingHorizontal: 16,
-    paddingVertical: 4
-  },
-  typingBubble: {
-    backgroundColor: '#E5E5EA',
-    borderRadius: 18,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    alignSelf: 'flex-start'
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 5,
+    paddingLeft: 15,
   },
   typingText: {
-    fontSize: 14,
-    color: '#666',
-    fontStyle: 'italic'
+    fontSize: 12,
+    color: '#999',
+    marginLeft: 5,
   },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    backgroundColor: 'white',
+    padding: 10,
     borderTopWidth: 1,
-    borderTopColor: '#e0e0e0'
+    borderTopColor: '#e0e0e0',
+    backgroundColor: '#fff',
   },
   input: {
     flex: 1,
     backgroundColor: '#f0f0f0',
     borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingHorizontal: 15,
+    paddingVertical: 10,
     maxHeight: 100,
-    fontSize: 16
+    fontSize: 16,
   },
   sendButton: {
     backgroundColor: '#007AFF',
-    borderRadius: 20,
     width: 40,
     height: 40,
+    borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
-    marginLeft: 8
+    marginLeft: 10,
   },
   sendButtonDisabled: {
-    backgroundColor: '#B0B0B0'
-  }
+    backgroundColor: '#B0C4DE',
+  },
 });

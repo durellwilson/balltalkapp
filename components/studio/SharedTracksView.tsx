@@ -17,8 +17,8 @@ import UserService from '../../services/UserService';
 import { TrackShare, ShareStatus, SharePermission } from '../../models/TrackSharing';
 import { Song } from '../../models/Song';
 import { User } from '../../models/User';
-import { ERROR } from '../../constants/Colors';
-import Colors from '../../constants/Colors';
+import { ERROR } from '@/constants/Colors';
+import Colors from '@/constants/Colors';
 import { Audio } from 'expo-av';
 import { useTheme } from '../../hooks/useTheme';
 

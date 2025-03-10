@@ -16,16 +16,21 @@
     "esModuleInterop": true,
     "resolveJsonModule": true,
     "allowSyntheticDefaultImports": true,
-    "baseUrl": "./",
+    "baseUrl": "../",
     "paths": {
-      "@/*": [
-        "./*"
-      ]
+      "../../components/*": ["components/*"],
+      "@constants/*": ["constants/*"],
+      "../../hooks/*": ["hooks/*"],
+      "../../contexts/*": ["contexts/*"],
+      "../../services/*": ["services/*"],
+      "../../utils/*": ["utils/*"],
+      "@assets/*": ["assets/*"],
+      "../../models/*": ["models/*"]
     }
   },
   "include": [
-    "**/*.ts",
-    "**/*.tsx"
+    "../**/*.ts",
+    "../**/*.tsx"
   ],
   "exclude": [
     "node_modules",

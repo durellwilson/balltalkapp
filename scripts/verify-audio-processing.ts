@@ -11,9 +11,9 @@
 
 import fs from 'fs';
 import path from 'path';
-import AudioEngine from '../services/audio/AudioEngine';
-import { DEFAULT_PROCESSING_SETTINGS } from '../models/audio/MasteringModels';
-import { trackAudioProcessing } from '../services/analytics/AudioProcessingAnalytics';
+import AudioEngine from '../../services/audio/AudioEngine';
+import { DEFAULT_PROCESSING_SETTINGS } from '../../models/audio/MasteringModels';
+import { trackAudioProcessing } from '../../services/analytics/AudioProcessingAnalytics';
 
 // Check if a file path was provided
 const testFilePath = process.argv[2];

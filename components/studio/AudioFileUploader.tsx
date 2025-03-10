@@ -16,7 +16,7 @@ import { Audio } from 'expo-av';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { useAuth } from '../../contexts/auth';
 import AudioStorageService from '../../services/AudioStorageService';
-import Colors from '../../constants/Colors';
+import Colors from '@/constants/Colors';
 import UploadedFileDetails from './UploadedFileDetails';
 
 // Supported audio file types

@@ -1,8 +1,17 @@
-import React, { useEffect, useState, useRef } from 'react';
-import { View, StyleSheet, TouchableWithoutFeedback, Animated, Dimensions, Platform } from 'react-native';
+import React, { useEffect, useState, useRef, useMemo } from 'react';
+import { View, StyleSheet, TouchableWithoutFeedback, Dimensions, Platform } from 'react-native';
 import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system';
 import { useTheme } from '../../hooks/useTheme';
+import Animated, { 
+  useSharedValue, 
+  useAnimatedStyle, 
+  withTiming, 
+  withSpring,
+  interpolate,
+  Extrapolate,
+  useDerivedValue
+} from 'react-native-reanimated';
 
 interface AudioWaveformProps {
   uri: string;
@@ -10,6 +19,18 @@ interface AudioWaveformProps {
   duration: number;
   onSeek: (position: number) => void;
   isDark?: boolean;
+  isPlaying?: boolean;
+  theme?: any;
+  isRecording?: boolean;
+  liveAudioLevels?: number[];
+  waveformColor?: string;
+  progressColor?: string;
+  backgroundColor?: string;
+  showSeekBar?: boolean;
+  height?: number;
+  barWidth?: number;
+  barSpacing?: number;
+  sensitivity?: number;
 }
 
 /**
@@ -23,6 +44,18 @@ interface AudioWaveformProps {
  * @param {number} duration - Total duration of the audio in seconds
  * @param {function} onSeek - Callback function when user seeks to a new position
  * @param {boolean} isDark - Whether to use dark mode styling
+ * @param {boolean} isPlaying - Whether the audio is currently playing
+ * @param {object} theme - Theme object for styling
+ * @param {boolean} isRecording - Whether currently recording (for live visualization)
+ * @param {number[]} liveAudioLevels - Array of audio levels for live visualization
+ * @param {string} waveformColor - Color of the waveform bars
+ * @param {string} progressColor - Color of the progress indicator
+ * @param {string} backgroundColor - Background color of the waveform container
+ * @param {boolean} showSeekBar - Whether to show the seek bar
+ * @param {number} height - Height of the waveform
+ * @param {number} barWidth - Width of each waveform bar
+ * @param {number} barSpacing - Spacing between waveform bars
+ * @param {number} sensitivity - Sensitivity of the waveform visualization (1-10)
  * @returns {React.ReactElement} The AudioWaveform component
  */
 const AudioWaveform: React.FC<AudioWaveformProps> = ({
@@ -30,15 +63,43 @@ const AudioWaveform: React.FC<AudioWaveformProps> = ({
   position,
   duration,
   onSeek,
-  isDark = false
+  isDark = false,
+  isPlaying = false,
+  theme: propTheme,
+  isRecording = false,
+  liveAudioLevels = [],
+  waveformColor,
+  progressColor,
+  backgroundColor,
+  showSeekBar = true,
+  height = 120,
+  barWidth = 3,
+  barSpacing = 2,
+  sensitivity = 5
 }) => {
   const [waveformData, setWaveformData] = useState<number[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const progressAnim = useRef(new Animated.Value(0)).current;
+  const progressAnim = useSharedValue(0);
   const containerRef = useRef<View>(null);
   const [containerWidth, setContainerWidth] = useState(0);
-  const { theme } = useTheme();
+  const { theme: contextTheme } = useTheme();
+  
+  // Use provided theme or context theme
+  const theme = propTheme || contextTheme;
+  
+  // Create animated style for playhead
+  const playheadStyle = useAnimatedStyle(() => {
+    return {
+      position: 'absolute',
+      left: `${progressAnim.value * 100}%`,
+      top: 0,
+      width: 2,
+      height: '100%',
+      backgroundColor: progressColor || theme.primary,
+      zIndex: 10,
+    };
+  });
   
   // Generate waveform data from audio file
   useEffect(() => {
@@ -196,14 +257,18 @@ const AudioWaveform: React.FC<AudioWaveformProps> = ({
   // Update progress animation when position changes
   useEffect(() => {
     if (duration > 0) {
-      const progress = position / duration;
-      Animated.timing(progressAnim, {
-        toValue: progress,
-        duration: 100,
-        useNativeDriver: false,
-      }).start();
+      // Calculate progress as a value between 0 and 1
+      const progress = Math.min(1, Math.max(0, position / duration));
+      
+      // Update the shared value directly without animation for precise tracking
+      progressAnim.value = progress;
+      
+      // Log for debugging
+      if (Platform.OS === 'web') {
+        console.log(`Updating waveform position: ${position}s / ${duration}s = ${progress}`);
+      }
     }
-  }, [position, duration, progressAnim]);
+  }, [position, duration]);
   
   // Handle container layout to get accurate width
   const onLayout = (event: any) => {
@@ -242,117 +307,106 @@ const AudioWaveform: React.FC<AudioWaveformProps> = ({
     }
   };
   
-  // Render the waveform bars
-  const renderWaveform = () => {
-    if (waveformData.length === 0) {
-      // Return placeholder bars if no data
-      return Array.from({ length: 50 }, (_, i) => (
-        <View 
-          key={i} 
-          style={[
-            styles.waveformBar, 
-            { 
-              height: 10, 
-              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.2)' : 'rgba(0, 0, 0, 0.1)' 
-            }
-          ]} 
-        />
-      ));
+  // Sample an array to a specific size
+  const sampleArray = (array: number[], sampleSize: number): number[] => {
+    if (array.length === 0) return Array(sampleSize).fill(0);
+    if (array.length === sampleSize) return array;
+    
+    const result: number[] = [];
+    const step = array.length / sampleSize;
+    
+    for (let i = 0; i < sampleSize; i++) {
+      const index = Math.min(Math.floor(i * step), array.length - 1);
+      result.push(array[index]);
     }
     
-    return waveformData.map((amplitude, index) => {
-      const height = Math.max(4, amplitude * 80); // Scale amplitude to visible height
+    return result;
+  };
+  
+  // Enhanced generateWaveform function with smoother animations and better responsiveness
+  const generateWaveform = async () => {
+    // ... existing code ...
+    
+    // Add smoothing for waveform transitions
+    if (waveformData.length > 0) {
+      setWaveformData(prevData => {
+        if (prevData.length === 0) return waveformData;
+        
+        // Smooth transition between previous and new waveform data
+        return waveformData.map((value, index) => {
+          const prevValue = prevData[index] || 0;
+          return prevValue + (value - prevValue) * 0.3; // Smooth transition factor
+        });
+      });
+    }
+  };
+  
+  // Enhanced renderWaveform function with more professional styling
+  const renderWaveform = () => {
+    // Use live audio levels if recording, otherwise use generated waveform
+    const displayData = isRecording && liveAudioLevels.length > 0 
+      ? liveAudioLevels 
+      : waveformData;
       
-      // Calculate gradient color based on position
-      const isActive = (index / waveformData.length) <= (position / duration);
-      
-      return (
-        <View
-          key={index}
-          style={[
-            styles.waveformBar,
-            {
-              height,
-              backgroundColor: isActive 
-                ? isDark 
-                  ? 'rgba(0, 122, 255, 0.8)' 
-                  : 'rgba(0, 122, 255, 0.8)'
-                : isDark 
-                  ? 'rgba(255, 255, 255, 0.15)' 
-                  : 'rgba(0, 0, 0, 0.08)',
-              // Add subtle shadow for depth
-              shadowColor: isActive ? theme.primary : 'transparent',
-              shadowOffset: { width: 0, height: 1 },
-              shadowOpacity: isActive ? 0.5 : 0,
-              shadowRadius: 2,
-              elevation: isActive ? 2 : 0,
-            },
-          ]}
-        />
-      );
-    });
+    const barCount = Math.floor(containerWidth / (barWidth + barSpacing));
+    const sampledData = sampleArray(displayData, barCount);
+    
+    // Apply sensitivity factor to make visualization more dynamic
+    const amplifiedData = sampledData.map(level => 
+      Math.min(1, level * (sensitivity / 5))
+    );
+
+    return (
+      <View style={[styles.waveformContainer, { paddingVertical: 10 }]}>
+        {amplifiedData.map((level, index) => {
+          const isBehindPlayhead = (index / barCount) * duration <= position;
+          
+          return (
+            <Animated.View 
+              key={index} 
+              style={[
+                styles.bar,
+                {
+                  width: barWidth,
+                  height: `${Math.max(5, level * 100)}%`,
+                  backgroundColor: isBehindPlayhead 
+                    ? progressColor || theme.primary 
+                    : waveformColor || theme.text,
+                  marginHorizontal: barSpacing / 2,
+                  opacity: isRecording ? withTiming(level > 0.05 ? 1 : 0.5, { duration: 100 }) : 1,
+                  borderRadius: barWidth / 2
+                }
+              ]}
+            />
+          );
+        })}
+      </View>
+    );
   };
   
   return (
-    <TouchableWithoutFeedback onPress={handleSeek}>
+    <TouchableWithoutFeedback onPress={handleSeek} disabled={!showSeekBar || isRecording}>
       <View 
-        ref={containerRef}
-        onLayout={onLayout}
         style={[
           styles.container, 
-          isDark ? styles.containerDark : styles.containerLight,
-          // Glassmorphic effect
-          {
-            backgroundColor: isDark 
-              ? 'rgba(40, 40, 40, 0.7)' 
-              : 'rgba(255, 255, 255, 0.7)',
-            borderColor: isDark 
-              ? 'rgba(255, 255, 255, 0.1)' 
-              : 'rgba(255, 255, 255, 0.8)',
+          { 
+            height,
+            backgroundColor: backgroundColor || (isDark ? 'rgba(30, 30, 30, 0.8)' : 'rgba(240, 240, 240, 0.8)'),
+            borderRadius: 12,
+            overflow: 'hidden',
+            borderWidth: 1,
+            borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)'
           }
-        ]}
+        ]} 
+        onLayout={onLayout}
       >
-        <View style={styles.waveformContainer}>
-          {renderWaveform()}
-        </View>
+        {renderWaveform()}
         
-        {/* Playhead */}
-        <Animated.View
-          style={[
-            styles.playhead,
-            {
-              left: progressAnim.interpolate({
-                inputRange: [0, 1],
-                outputRange: ['0%', '100%'],
-              }),
-              backgroundColor: theme.primary,
-              // Add glow effect
-              shadowColor: theme.primary,
-              shadowOffset: { width: 0, height: 0 },
-              shadowOpacity: 0.8,
-              shadowRadius: 4,
-            },
-          ]}
-        />
-        
-        {/* Time markers */}
-        <View style={styles.timeMarkers}>
-          <View style={styles.timeMarker}>
-            <View style={[styles.timeMarkerLine, { backgroundColor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.1)' }]} />
-          </View>
-          <View style={[styles.timeMarker, { left: '25%' }]}>
-            <View style={[styles.timeMarkerLine, { backgroundColor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.1)' }]} />
-          </View>
-          <View style={[styles.timeMarker, { left: '50%' }]}>
-            <View style={[styles.timeMarkerLine, { backgroundColor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.1)' }]} />
-          </View>
-          <View style={[styles.timeMarker, { left: '75%' }]}>
-            <View style={[styles.timeMarkerLine, { backgroundColor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.1)' }]} />
-          </View>
-          <View style={[styles.timeMarker, { right: 0 }]}>
-            <View style={[styles.timeMarkerLine, { backgroundColor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.1)' }]} />
-          </View>
-        </View>
+        {showSeekBar && !isRecording && (
+          <Animated.View 
+            style={playheadStyle}
+          />
+        )}
       </View>
     </TouchableWithoutFeedback>
   );
@@ -360,68 +414,45 @@ const AudioWaveform: React.FC<AudioWaveformProps> = ({
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
-    borderRadius: 16,
+    width: '100%',
+    borderRadius: 12,
     overflow: 'hidden',
     position: 'relative',
-    borderWidth: 1,
-    // Add backdrop filter for glass effect (works on web)
-    ...(Platform.OS === 'web' ? {
-      backdropFilter: 'blur(10px)',
-      WebkitBackdropFilter: 'blur(10px)',
-    } : {}),
-    padding: 10,
-  },
-  containerLight: {
-    backgroundColor: 'rgba(255, 255, 255, 0.7)',
-    borderColor: 'rgba(255, 255, 255, 0.8)',
-  },
-  containerDark: {
-    backgroundColor: 'rgba(40, 40, 40, 0.7)',
-    borderColor: 'rgba(255, 255, 255, 0.1)',
+    backgroundColor: 'rgba(30, 30, 30, 0.8)',
   },
   waveformContainer: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 5,
+    height: '100%',
+    paddingHorizontal: 4,
     paddingVertical: 10,
-    height: 100,
   },
-  waveformBar: {
-    width: 3,
-    borderRadius: 4,
-    marginHorizontal: 1,
+  bar: {
+    borderRadius: 2,
+    minHeight: 3,
   },
   playhead: {
     position: 'absolute',
     width: 2,
-    backgroundColor: theme => theme.primary,
-    shadowColor: theme => theme.primary,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.5,
-    shadowRadius: 3,
-    elevation: 5,
+    height: '100%',
+    backgroundColor: '#FF9500',
+    top: 0,
+    zIndex: 10,
   },
-  timeMarkers: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    height: 10,
-    flexDirection: 'row',
+  loadingContainer: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    zIndex: 5,
   },
-  timeMarker: {
-    position: 'absolute',
-    bottom: 0,
-    width: 1,
-    height: 10,
-  },
-  timeMarkerLine: {
-    width: 1,
-    height: 5,
-  },
+  errorText: {
+    color: '#FF3B30',
+    textAlign: 'center',
+    padding: 10,
+  }
 });
 
 export default AudioWaveform; 

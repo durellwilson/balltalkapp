@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
-import { recordError, ErrorCategory } from '../utils/errorReporting';
-import { useAuth } from '../contexts/auth';
+import { recordError, ErrorCategory } from '../../utils/errorReporting';
+import { useAuth } from '../../contexts/auth';
 import { Ionicons } from '@expo/vector-icons';
 
 interface ErrorBoundaryProps {

@@ -174,7 +174,7 @@ const handleLoginError = (error: any) => {
 };
 
   const handleSignUp = () => {
-    router.push('/signup');
+    router.push('/(auth)/signup');
   };
   
   const loginWithDemoAccount = (type: 'athlete' | 'fan') => {
@@ -282,7 +282,7 @@ const handleLoginError = (error: any) => {
         
         <TouchableOpacity 
           style={styles.fanHubButton}
-          onPress={() => router.push('/fan-hub')}
+          onPress={() => router.push('/chat/fan-hub')}
           disabled={isLoading}
         >
           <Text style={styles.fanHubButtonText}>Join Fan Hub</Text>

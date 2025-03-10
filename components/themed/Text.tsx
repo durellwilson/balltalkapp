@@ -6,7 +6,7 @@ import {
   StyleProp,
   TextProps as RNTextProps,
 } from 'react-native';
-import { defaultTheme, ThemeType } from '../../constants';
+import { defaultTheme, ThemeType } from '@/constants';
 
 // Text variants
 export type TextVariant =

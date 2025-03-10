@@ -14,7 +14,7 @@ import {
 import { useAuth } from '../../contexts/auth';
 import AuthService from '../../services/AuthService';
 import VerificationService from '../../services/VerificationService';
-import Colors from '../../constants/Colors';
+import Colors from '@/constants/Colors';
 import { AntDesign, MaterialIcons, Ionicons } from '@expo/vector-icons';
 import AthleteVerificationForm from '../verification/AthleteVerificationForm';
 import { db } from '../../src/lib/firebase';

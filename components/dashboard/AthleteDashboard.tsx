@@ -17,7 +17,7 @@ import SubscriptionService from '../../services/SubscriptionService';
 import { Theme } from '../../constants/Theme'; // Import Theme
 import { AntDesign, MaterialIcons, Ionicons, FontAwesome5 } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import Colors from '../../constants/Colors';
+import Colors from '@/constants/Colors';
 
 // Define a default theme using Colors
 const defaultTheme = {

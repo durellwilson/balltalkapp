@@ -5,9 +5,13 @@ import {
   TouchableOpacity,
   Image,
   ImageSourcePropType,
+  Platform
 } from 'react-native';
 import { FontAwesome5, Ionicons, MaterialIcons } from '@expo/vector-icons';
-import { Text } from '../themed';
+import { Text, Button, Badge } from '../themed';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useRouter } from 'expo-router';
+import Colors from '@/constants/Colors';
 // import { formatNumber } from '../../utils/formatting';
 
 // Define theme interface for proper typing
@@ -51,6 +55,21 @@ export interface AthleteProfileCardProps { // Add 'export'
   onFollowPress?: () => void;
   onAuthenticatePress?: () => void;
   theme?: Theme;
+  athlete: {
+    id: string;
+    name: string;
+    username: string;
+    sport: string;
+    team?: string;
+    position?: string;
+    verified: boolean;
+    followers: number;
+    profileImage?: string;
+    coverImage?: string;
+    bio?: string;
+  };
+  onFollow?: () => void;
+  compact?: boolean;
 }
 
 // Helper function to format large numbers
@@ -122,8 +141,17 @@ const AthleteProfileCard: React.FC<AthleteProfileCardProps> = ({
       border: '#DDDDDD',
       notification: '#FF3B30',
     }
-  }
+  },
+  athlete,
+  onFollow,
+  compact = false,
 }) => {
+  const router = useRouter();
+
+  const handleProfilePress = () => {
+    router.push(`/athlete-profile/${id}`);
+  };
+
   // Default placeholder avatar if none provided
   const avatarSource = typeof avatar === 'string' && avatar
     ? { uri: avatar }
@@ -131,270 +159,192 @@ const AthleteProfileCard: React.FC<AthleteProfileCardProps> = ({
       ? avatar
       : require('../../assets/images/adaptive-icon.png');
 
+  // Format follower count
+  const formatFollowers = (count: number): string => {
+    if (count >= 1000000) {
+      return `${(count / 1000000).toFixed(1)}M`;
+    } else if (count >= 1000) {
+      return `${(count / 1000).toFixed(1)}K`;
+    }
+    return count.toString();
+  };
+
   return (
-    <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
-      {/* Card Header - Avatar, Name, Verification */}
-      <View style={styles.cardHeader}>
-        <TouchableOpacity
-          style={styles.profileSection}
-          onPress={onProfilePress}
-        >
-          <View style={styles.avatarContainer}>
-            <Image
-              source={avatarSource}
-              style={styles.avatar}
-              resizeMode="cover"
-            />
-          </View>
-
-          <View style={styles.nameContainer}>
-            <View style={styles.nameRow}>
-              <Text style={styles.name}>{name}</Text>
-              {verified && (
-                <MaterialIcons
-                  name="verified"
-                  size={16}
-                  color={theme.colors.primary}
-                  style={styles.verifiedIcon}
-                />
-              )}
-            </View>
-
-            <Text style={styles.username}>{username}</Text>
-
-            <View style={styles.sportRow}>
-              {getSportIcon(sport)}
-              <Text style={styles.sportText}>
-                {sport}
-                {position ? ` • ${position}` : ''}
-                {team ? ` • ${team}` : ''}
-              </Text>
-            </View>
-          </View>
-        </TouchableOpacity>
-
-        {isAuthenticated ? (
-          <View style={[styles.authenticatedBadge, { backgroundColor: theme.colors.primary }]}>
-            <MaterialIcons name="verified-user" size={12} color="white" />
-            <Text style={styles.authenticatedText}>Authenticated</Text>
-          </View>
-        ) : onAuthenticatePress ? (
-          <TouchableOpacity
-            style={[styles.authenticateButton, { borderColor: theme.colors.primary }]}
-            onPress={onAuthenticatePress}
-          >
-            <Text style={[styles.authenticateText, { color: theme.colors.primary }]}>
-              Authenticate
-            </Text>
-          </TouchableOpacity>
-        ) : null}
+    <TouchableOpacity
+      style={[styles.container, compact && styles.compactContainer]}
+      onPress={handleProfilePress}
+      activeOpacity={0.9}
+    >
+      {/* Cover Image with Gradient Overlay */}
+      <View style={styles.coverContainer}>
+        <Image
+          source={athlete.coverImage ? { uri: athlete.coverImage } : require('../../assets/images/default-cover.png')}
+          style={styles.coverImage}
+        />
+        <LinearGradient
+          colors={['transparent', 'rgba(0,0,0,0.7)']}
+          style={styles.gradient}
+        />
       </View>
 
-      {/* Card Metrics - Statistics */}
-      {metrics.length > 0 && (
-        <View style={styles.metricsContainer}>
-          {metrics.map((metric, index) => (
-            <View
-              key={`${metric.label}-${index}`}
-              style={styles.metricItem}
-            >
-              <FontAwesome5
-                name={metric.icon}
-                size={14}
-                color={metric.color || '#666'}
-                solid
-                style={styles.metricIcon}
-              />
-              <Text style={styles.metricValue}>
-                {formatMetricValue(metric.value)}
-              </Text>
-              <Text style={styles.metricLabel}>{metric.label}</Text>
-            </View>
-          ))}
+      {/* Profile Image */}
+      <View style={styles.profileImageContainer}>
+        <Image
+          source={athlete.profileImage ? { uri: athlete.profileImage } : require('../../assets/images/default-profile.png')}
+          style={styles.profileImage}
+        />
+        {athlete.verified && (
+          <View style={styles.verifiedBadge}>
+            <Ionicons name="checkmark-circle" size={24} color={Colors.primary} />
+          </View>
+        )}
+      </View>
+
+      {/* Athlete Info */}
+      <View style={styles.infoContainer}>
+        <View style={styles.nameContainer}>
+          <Text style={styles.name}>{athlete.name}</Text>
+          <Text style={styles.username}>@{athlete.username}</Text>
         </View>
-      )}
 
-      {/* Card Actions - Follow, Message, Music */}
-      <View style={styles.actionContainer}>
-        {onFollowPress && (
-          <TouchableOpacity
-            style={[
-              styles.actionButton,
-              styles.followButton,
-              isFollowing
-                ? { backgroundColor: 'transparent', borderWidth: 1, borderColor: theme.colors.primary }
-                : { backgroundColor: theme.colors.primary }
-            ]}
-            onPress={onFollowPress}
-          >
-            <Text style={[
-              styles.actionButtonText,
-              isFollowing ? { color: theme.colors.primary } : { color: 'white' }
-            ]}>
-              {isFollowing ? 'Following' : 'Follow'}
-            </Text>
-          </TouchableOpacity>
+        <View style={styles.detailsContainer}>
+          <Badge label={athlete.sport} color={Colors.accent1} />
+          {athlete.team && <Badge label={athlete.team} color={Colors.accent3} />}
+          {athlete.position && <Badge label={athlete.position} color={Colors.accent2} />}
+        </View>
+
+        {!compact && athlete.bio && (
+          <Text style={styles.bio} numberOfLines={2}>
+            {athlete.bio}
+          </Text>
         )}
 
-        {onMessagePress && (
-          <TouchableOpacity
-            style={[styles.actionButton, styles.iconButton]}
-            onPress={onMessagePress}
-          >
-            <Ionicons name="chatbubble-outline" size={20} color="#666" />
-          </TouchableOpacity>
-        )}
+        <View style={styles.statsContainer}>
+          <View style={styles.followersContainer}>
+            <Text style={styles.followersCount}>{formatFollowers(athlete.followers)}</Text>
+            <Text style={styles.followersLabel}>Followers</Text>
+          </View>
 
-        {onMusicPress && (
-          <TouchableOpacity
-            style={[styles.actionButton, styles.iconButton]}
-            onPress={onMusicPress}
-          >
-            <Ionicons name="musical-notes-outline" size={20} color="#666" />
-          </TouchableOpacity>
-        )}
+          {onFollow && (
+            <Button
+              onPress={onFollow}
+              title={isFollowing ? 'Following' : 'Follow'}
+              type={isFollowing ? 'outline' : 'primary'}
+              size="small"
+              style={styles.followButton}
+            />
+          )}
+        </View>
       </View>
-    </View>
+    </TouchableOpacity>
   );
 };
 
 const styles = StyleSheet.create({
-  card: {
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    marginBottom: 12,
-  },
-  profileSection: {
-    flexDirection: 'row',
-    flex: 1,
-  },
-  avatarContainer: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
+  container: {
+    backgroundColor: Colors.light.cardBackground,
+    borderRadius: 16,
     overflow: 'hidden',
-    marginRight: 12,
+    marginVertical: 8,
+    marginHorizontal: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
-  avatar: {
+  compactContainer: {
+    height: 220,
+  },
+  coverContainer: {
+    height: 100,
     width: '100%',
+    position: 'relative',
+  },
+  coverImage: {
     height: '100%',
-    backgroundColor: '#e0e0e0',
+    width: '100%',
+    resizeMode: 'cover',
+  },
+  gradient: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: 50,
+  },
+  profileImageContainer: {
+    position: 'absolute',
+    top: 60,
+    left: 16,
+    borderRadius: 40,
+    borderWidth: 3,
+    borderColor: Colors.light.cardBackground,
+    overflow: 'hidden',
+  },
+  profileImage: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+  },
+  verifiedBadge: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    backgroundColor: Colors.light.cardBackground,
+    borderRadius: 12,
+    padding: 2,
+  },
+  infoContainer: {
+    paddingTop: 50,
+    paddingHorizontal: 16,
+    paddingBottom: 16,
   },
   nameContainer: {
-    justifyContent: 'center',
-    flex: 1,
-  },
-  nameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 2,
+    marginBottom: 8,
   },
   name: {
     fontSize: 18,
     fontWeight: 'bold',
-    marginRight: 4,
-  },
-  verifiedIcon: {
-    marginLeft: 4,
   },
   username: {
     fontSize: 14,
-    color: '#666',
-    marginBottom: 4,
+    color: Colors.light.textSecondary,
+    marginTop: 2,
   },
-  sportRow: {
+  detailsContainer: {
     flexDirection: 'row',
-    alignItems: 'center',
+    flexWrap: 'wrap',
+    marginBottom: 12,
+    gap: 8,
   },
-  sportText: {
-    fontSize: 12,
-    color: '#999',
-    marginLeft: 6,
+  bio: {
+    fontSize: 14,
+    color: Colors.light.text,
+    marginBottom: 12,
+    lineHeight: 20,
   },
-  authenticatedBadge: {
+  statsContainer: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-    marginLeft: 8,
+    marginTop: 8,
   },
-  authenticatedText: {
-    color: 'white',
-    fontSize: 10,
-    fontWeight: 'bold',
-    marginLeft: 4,
-  },
-  authenticateButton: {
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-  },
-  authenticateText: {
-    fontSize: 10,
-    fontWeight: 'bold',
-  },
-  metricsContainer: {
+  followersContainer: {
     flexDirection: 'row',
-    marginBottom: 16,
-    paddingTop: 12,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: '#e0e0e0',
+    alignItems: 'baseline',
+    gap: 4,
   },
-  metricItem: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  metricIcon: {
-    marginBottom: 4,
-  },
-  metricValue: {
+  followersCount: {
     fontSize: 16,
     fontWeight: 'bold',
-    marginBottom: 2,
   },
-  metricLabel: {
-    fontSize: 12,
-    color: '#666',
-  },
-  actionContainer: {
-    flexDirection: 'row',
-    justifyContent: 'flex-start',
-    alignItems: 'center',
-  },
-  actionButton: {
-    borderRadius: 20,
-    paddingVertical: 8,
-    marginRight: 12,
+  followersLabel: {
+    fontSize: 14,
+    color: Colors.light.textSecondary,
   },
   followButton: {
-    paddingHorizontal: 20,
     minWidth: 100,
-    alignItems: 'center',
-  },
-  iconButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#f5f5f5',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  actionButtonText: {
-    fontWeight: 'bold',
-    fontSize: 14,
   },
 });
 

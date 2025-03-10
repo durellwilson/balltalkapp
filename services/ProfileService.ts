@@ -1,6 +1,6 @@
 // services/ProfileService.ts
-import type { Profile} from '../models/Profile';
-import type {ProfileData} from '../models/Profile';
+import type { Profile} from '../../models/Profile';
+import type {ProfileData} from '../../models/Profile';
 import { db } from '../src/lib/firebase'
 import { doc, setDoc, getDoc, collection, query, where, getDocs, updateDoc, DocumentData } from '@react-native-firebase/firestore';
 // Cast db to Firestore type

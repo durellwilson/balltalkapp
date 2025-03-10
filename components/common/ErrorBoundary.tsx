@@ -1,6 +1,6 @@
 import React, { Component, ErrorInfo, ReactNode } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Platform } from 'react-native';
-import Colors from '../../constants/Colors';
+import Colors from '@/constants/Colors';
 import { Ionicons } from '@expo/vector-icons';
 import * as Updates from 'expo-updates';
 

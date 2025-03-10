@@ -58,7 +58,7 @@ const NavigationGuard: React.FC<NavigationGuardProps> = ({ children }) => {
         
         if (!isLoggedIn) {
           console.log(`Redirecting to Login from ${route.name} - User not authenticated`);
-          navigation.navigate('Login', { 
+          router.push('/login', { 
             returnTo: route.name !== 'Login' ? route.name : undefined 
           });
         }
@@ -68,13 +68,13 @@ const NavigationGuard: React.FC<NavigationGuardProps> = ({ children }) => {
           // Athletes can access athlete routes and common authenticated routes
           if (FAN_ROUTES.includes(route.name)) {
             console.log(`Redirecting athlete from fan route: ${route.name}`);
-            navigation.navigate('Home');
+            router.push('/home');
           }
         } else if (user?.role === 'fan') {
           // Fans can access fan routes and common authenticated routes
           if (ATHLETE_ROUTES.includes(route.name)) {
             console.log(`Redirecting fan from athlete route: ${route.name}`);
-            navigation.navigate('Home');
+            router.push('/home');
           }
         }
         

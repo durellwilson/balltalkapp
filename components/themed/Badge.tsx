@@ -6,7 +6,7 @@ import {
   StyleProp,
   TextStyle,
 } from 'react-native';
-import { defaultTheme, ThemeType } from '../../constants';
+import { defaultTheme, ThemeType } from '@/constants';
 import Text from './Text';
 
 // Badge variants

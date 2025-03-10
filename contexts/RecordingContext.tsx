@@ -3,10 +3,10 @@ import { Platform } from 'react-native';
 import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import ErrorHandlingService from '../services/ErrorHandlingService';
-import WebAudioRecordingService, { WebAudioRecordingService as WebAudioRecordingServiceClass } from '../services/WebAudioRecordingService';
-import AudioMonitoringService from '../services/AudioMonitoringService';
-import { LogLevel } from '../models/monitoring/MonitoringModels';
+import ErrorHandlingService from '../../services/ErrorHandlingService';
+import WebAudioRecordingService, { WebAudioRecordingService as WebAudioRecordingServiceClass } from '../../services/WebAudioRecordingService';
+import AudioMonitoringService from '../../services/AudioMonitoringService';
+import { LogLevel } from '../../models/monitoring/MonitoringModels';
 
 // Recording quality presets
 export enum RecordingQuality {

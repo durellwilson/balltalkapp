@@ -1,3 +1,8 @@
+// Custom entry point to fix Metro bundling issues
+console.log('Loading custom entry point...');
 
-// Temporary entry file to work around Expo Router issues
+// Import our module resolver
+require('./moduleResolver');
+
+// Import the standard Expo Router entry
 import 'expo-router/entry';

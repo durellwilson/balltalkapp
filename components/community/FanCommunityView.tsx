@@ -12,7 +12,7 @@ import {
   RefreshControl
 } from 'react-native';
 import { useAuth } from '../../contexts/auth';
-import Colors from '../../constants/Colors';
+import Colors from '@/constants/Colors';
 import { AntDesign, MaterialIcons, Ionicons } from '@expo/vector-icons';
 
 // Mock data for community posts

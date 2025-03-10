@@ -9,7 +9,7 @@ import {
   TextInputProps,
   TouchableOpacity,
 } from 'react-native';
-import { defaultTheme, ThemeType, Colors } from '../../constants';
+import { defaultTheme, ThemeType, Colors } from '@/constants';
 import Text from './Text';
 
 // Input variants

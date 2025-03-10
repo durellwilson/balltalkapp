@@ -12,7 +12,7 @@ import {
   Platform,
 } from 'react-native';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
-import Colors from '../../constants/Colors';
+import Colors from '@/constants/Colors';
 import { useTheme } from '../../hooks/useTheme';
 
 interface AudioProcessingControlsProps {

@@ -1,6 +1,6 @@
 import React from 'react';
 import { render } from '@testing-library/react-native';
-import TestScreen from '../../screens/TestScreen';
+import TestScreen from '../../app/TestScreen';
 
 // Mock the components used in TestScreen
 jest.mock('../../components/FirebaseVerification', () => {

@@ -43,11 +43,31 @@ const generateErrorId = (): string => {
 
 // Get basic device info
 const getDeviceInfo = () => {
-  return {
-    platform: Platform.OS,
-    version: Platform.Version.toString(),
-    // Add more device info as needed
-  };
+  try {
+    const platform = Platform.OS || 'unknown';
+    let version = 'unknown';
+    
+    // Handle version differently based on platform
+    if (Platform.OS === 'web') {
+      version = navigator?.userAgent || 'unknown';
+    } else if (Platform.Version !== undefined && Platform.Version !== null) {
+      // Handle both string and number versions
+      version = String(Platform.Version);
+    }
+    
+    return {
+      platform,
+      version,
+      // Add more device info as needed
+    };
+  } catch (error) {
+    // Fallback in case of any errors
+    console.warn('Error getting device info:', error);
+    return {
+      platform: 'unknown',
+      version: 'unknown',
+    };
+  }
 };
 
 // Store errors locally for offline reporting

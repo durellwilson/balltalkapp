@@ -9,7 +9,7 @@ import {
   TouchableOpacityProps,
   StyleProp,
 } from 'react-native';
-import { defaultTheme, ThemeType } from '../../constants';
+import { defaultTheme, ThemeType } from '@/constants';
 
 // Button variants
 export type ButtonVariant = 'primary' | 'secondary' | 'outline' | 'ghost' | 'danger';

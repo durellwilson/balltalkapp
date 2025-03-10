@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { useAuth } from '../../contexts/auth';
 import AuthService from '../../services/AuthService';
-import Colors from '../../constants/Colors';
+import Colors from '@/constants/Colors';
 import { AntDesign } from '@expo/vector-icons';
 
 interface FanProfileData {

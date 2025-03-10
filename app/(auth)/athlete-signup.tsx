@@ -1,6 +1,6 @@
 import React from 'react'
 import { View, StyleSheet, Alert } from 'react-native'
-import AthleteSignup from '../../components/auth/AthleteSignup';
+import AthleteSignup from '../../components/auth/AthleteSignup'
 import { useRouter } from 'expo-router'
 
 export default function AthleteSignupScreen() {

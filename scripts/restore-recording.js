@@ -317,7 +317,7 @@ if (!fs.existsSync(recorderScreenPath)) {
 import React from 'react';
 import { View, StyleSheet, Text } from 'react-native';
 import { Stack } from 'expo-router';
-import BasicRecorder from '../components/audio/BasicRecorder';
+import BasicRecorder from '../../components/audio/BasicRecorder';
 
 export default function RecorderScreen() {
   return (

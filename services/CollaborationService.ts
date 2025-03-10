@@ -23,7 +23,7 @@ import {
 } from 'firebase/firestore';
 import { ref, getStorage } from 'firebase/storage';
 import { v4 as uuidv4 } from 'uuid';
-import { FirebaseUser } from '../services/AuthService';
+import { FirebaseUser } from '../../services/AuthService';
 import StudioService, { Track } from './StudioService';
 
 // Cast db to proper type

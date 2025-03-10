@@ -14,7 +14,7 @@ import {
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { MAIN_GENRES, ALL_GENRES, filterGenres } from '../../constants/MusicGenres';
 import { useTheme } from '../../hooks/useTheme';
-import Colors from '../../constants/Colors';
+import Colors from '@/constants/Colors';
 
 interface GenreAutocompleteProps {
   value: string;

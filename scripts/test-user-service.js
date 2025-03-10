@@ -59,7 +59,7 @@ if (fs.existsSync(songDetailScreenPath)) {
   const content = fs.readFileSync(songDetailScreenPath, 'utf8');
   
   // Check if it imports UserService
-  if (content.includes("import UserService from '../services/UserService'")) {
+  if (content.includes("import UserService from '../../services/UserService'")) {
     console.log('✅ SongDetailScreen.tsx imports UserService correctly');
   } else {
     console.error('❌ SongDetailScreen.tsx does not import UserService correctly');

@@ -8,7 +8,7 @@ import {
   StyleProp,
 } from 'react-native';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
-import { defaultTheme, ThemeType, Colors } from '../../constants';
+import { defaultTheme, ThemeType, Colors } from '@/constants';
 import { Avatar, Text, Button } from '../themed';
 
 // Profile stats interface

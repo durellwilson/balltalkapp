@@ -12,7 +12,7 @@ import {
   Platform,
   Alert
 } from 'react-native';
-import { Text, Badge, ActionButton, Card } from '../../components/themed';
+import { Text, Badge, ActionButton, Card } from '@/components/themed';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { 
   Ionicons, 
@@ -23,7 +23,7 @@ import {
   Entypo
 } from '@expo/vector-icons';
 import { useAuth } from '../../contexts/auth';
-import { router, Link, Redirect } from 'expo-router';
+import { router, Link, Redirect, Stack } from 'expo-router';
 import AthleteVerificationForm from '../../components/verification/AthleteVerificationForm';
 import VerificationService from '../../services/VerificationService';
 
@@ -87,7 +87,128 @@ const ContentTypeIcon = ({ type, size = 20, color = "#666" }: { type: string; si
   }
 };
 
-const ContentItem = ({ item }: { item: typeof MOCK_USER_CONTENT[0] }) => {
+/**
+ * ProfileTab component that displays appropriate profile content
+ * and provides navigation options, including premium subscription
+ */
+export default function ProfileTab() {
+  const { user } = useAuth();
+  const isPremium = user && 'isPremium' in user ? user.isPremium : false;
+  
+  // If user is not logged in, show login prompt
+  if (!user) {
+    return (
+      <View style={styles.container}>
+        <Stack.Screen options={{ title: 'Profile' }} />
+        <View style={styles.notLoggedInContainer}>
+          <Ionicons name="person-circle" size={80} color="#ccc" />
+          <Text style={styles.notLoggedInTitle}>Not Logged In</Text>
+          <Text style={styles.notLoggedInText}>
+            Please log in to view your profile and access all features
+          </Text>
+          <TouchableOpacity 
+            style={styles.loginButton}
+            onPress={() => router.push('/(auth)/login')}
+          >
+            <Text style={styles.loginButtonText}>Log In</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+  
+  // For logged in users, show profile with appropriate options
+  return (
+    <SafeAreaView style={styles.container} edges={['bottom']}>
+      <Stack.Screen options={{ title: 'Profile' }} />
+      
+      <ScrollView style={styles.content}>
+        <View style={styles.profileHeader}>
+          <View style={styles.avatarContainer}>
+            <Image 
+              source={{ uri: user.photoURL || 'https://via.placeholder.com/150' }} 
+              style={styles.avatar} 
+            />
+            {user.isVerified && <VerificationBadge verified={true} />}
+          </View>
+          
+          <View style={styles.profileInfo}>
+            <View style={styles.nameRow}>
+              <Text style={styles.name}>{user.displayName}</Text>
+              {isPremium ? (
+                <View style={styles.premiumBadge}>
+                  <Ionicons name="star" size={14} color="#FFD700" />
+                  <Text style={styles.premiumText}>PREMIUM</Text>
+                </View>
+              ) : null}
+            </View>
+            
+            <Text style={styles.username}>@{user.username || 'username'}</Text>
+            <Text style={styles.bio}>
+              {user.bio || 'Welcome to my profile! I love music and sports.'}
+            </Text>
+            
+            <View style={styles.statsRow}>
+              <View style={styles.stat}>
+                <Text style={styles.statValue}>245</Text>
+                <Text style={styles.statLabel}>Posts</Text>
+              </View>
+              <View style={styles.stat}>
+                <Text style={styles.statValue}>15.2K</Text>
+                <Text style={styles.statLabel}>Followers</Text>
+              </View>
+              <View style={styles.stat}>
+                <Text style={styles.statValue}>843</Text>
+                <Text style={styles.statLabel}>Following</Text>
+              </View>
+            </View>
+          </View>
+        </View>
+        
+        <View style={styles.actionsSection}>
+          <TouchableOpacity 
+            style={styles.actionButton}
+            onPress={() => router.push('/(tabs)/profile/edit')}
+          >
+            <Ionicons name="create-outline" size={20} color="#007AFF" />
+            <Text style={styles.actionButtonText}>Edit Profile</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={styles.actionButton}
+            onPress={() => router.push('/(tabs)/profile/settings')}
+          >
+            <Ionicons name="settings-outline" size={20} color="#007AFF" />
+            <Text style={styles.actionButtonText}>Settings</Text>
+          </TouchableOpacity>
+          
+          {!isPremium && (
+            <TouchableOpacity 
+              style={[styles.actionButton, styles.premiumButton]}
+              onPress={() => router.push('/payment/subscription')}
+            >
+              <Ionicons name="star" size={20} color="#FFD700" />
+              <Text style={[styles.actionButtonText, styles.premiumButtonText]}>Go Premium</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+        
+        <View style={styles.contentSection}>
+          <Text style={styles.sectionTitle}>Your Content</Text>
+          
+          <FlatList
+            data={MOCK_USER_CONTENT}
+            renderItem={({ item }) => <ContentItem item={item} />}
+            keyExtractor={item => item.id}
+            scrollEnabled={false}
+          />
+        </View>
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+// Helper component for content items
+const ContentItem = ({ item }: { item: { thumbnail: string; type: string; title: string; views: number; likes: number; date: string; } }) => {
   return (
     <Card style={styles.contentItem}>
       <View style={styles.thumbnailContainer}>
@@ -107,73 +228,58 @@ const ContentItem = ({ item }: { item: typeof MOCK_USER_CONTENT[0] }) => {
     </Card>
   );
 };
-
-const VerificationBadge = ({ verified, size = 'small' }: { verified: boolean; size?: 'small' | 'large' }) => {
+// Helper component for verification badge
+const VerificationBadge = ({ verified }: { verified: boolean; size?: 'small' | 'large' }) => {
   if (!verified) return null;
   
   return (
     <View style={[
       styles.verificationBadge,
-      size === 'large' && styles.verificationBadgeLarge
+      verified && styles.verificationBadgeLarge
     ]}>
       <Ionicons 
         name="checkmark-circle" 
-        size={size === 'large' ? 22 : 16} 
+        size={verified ? (verified ? 22 : 16) : 0} 
         color="white" 
       />
     </View>
   );
 };
 
-/**
- * ProfileTab component that redirects to the appropriate profile screen
- * based on the user's role (athlete or fan)
- */
-export default function ProfileTab() {
-  const { user } = useAuth();
-  const isAthlete = user?.role === 'athlete';
-  const isFan = user?.role === 'fan';
-  
-  // Redirect to the appropriate profile screen based on user role
-  if (isAthlete) {
-    return <Redirect href="/athlete-profile" />;
-  } else if (isFan) {
-    return <Redirect href="/fan-profile" />;
-  } else {
-    // Default profile for other user types or when role is not yet determined
-    return <Redirect href="/profile-default" />;
-  }
-}
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f8f8f8',
   },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 15,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eaeaea',
-    backgroundColor: 'white',
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-  },
-  headerActions: {
-    flexDirection: 'row',
-  },
-  headerButton: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+  notLoggedInContainer: {
+    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f0f0f0',
+    padding: 20,
+  },
+  notLoggedInTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    marginTop: 20,
+    marginBottom: 10,
+  },
+  notLoggedInText: {
+    fontSize: 16,
+    textAlign: 'center',
+    color: '#666',
+    marginBottom: 30,
+  },
+  loginButton: {
+    backgroundColor: '#007AFF',
+    paddingHorizontal: 30,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  loginButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
   content: {
     flex: 1,
@@ -225,20 +331,21 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginRight: 10,
   },
-  verifyButton: {
-    backgroundColor: '#007AFF',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 15,
+  premiumBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFF8E1',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#FFD700',
   },
-  pendingButton: {
-    backgroundColor: '#FF9500',
-    borderColor: '#FF9500',
-  },
-  verifyButtonText: {
-    color: 'white',
-    fontSize: 12,
+  premiumText: {
+    fontSize: 10,
     fontWeight: 'bold',
+    color: '#FF9800',
+    marginLeft: 3,
   },
   username: {
     fontSize: 16,
@@ -249,109 +356,82 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 15,
     paddingHorizontal: 20,
-    color: '#333',
-  },
-  athleteDetails: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    marginBottom: 15,
-  },
-  athleteDetail: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginHorizontal: 10,
-  },
-  detailIcon: {
-    marginRight: 5,
-  },
-  detailText: {
-    color: '#666',
   },
   statsRow: {
     flexDirection: 'row',
     justifyContent: 'space-around',
     width: '100%',
-    paddingVertical: 15,
-    borderTopWidth: 1,
-    borderTopColor: '#eaeaea',
-    borderBottomWidth: 1,
-    borderBottomColor: '#eaeaea',
-    marginBottom: 15,
+    paddingHorizontal: 20,
   },
-  statItem: {
+  stat: {
     alignItems: 'center',
   },
   statValue: {
     fontSize: 18,
     fontWeight: 'bold',
-    marginBottom: 2,
   },
   statLabel: {
     fontSize: 14,
     color: '#666',
   },
-  statDivider: {
-    width: 1,
-    height: '80%',
-    backgroundColor: '#eaeaea',
-  },
-  socialLinks: {
+  actionsSection: {
     flexDirection: 'row',
-    justifyContent: 'center',
-  },
-  socialButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#f0f0f0',
-    marginHorizontal: 10,
-  },
-  tabsContainer: {
+    flexWrap: 'wrap',
+    justifyContent: 'space-around',
+    paddingVertical: 15,
+    paddingHorizontal: 10,
+    backgroundColor: 'white',
+    marginTop: 10,
     borderBottomWidth: 1,
     borderBottomColor: '#eaeaea',
-    backgroundColor: 'white',
   },
-  tabsContent: {
-    paddingHorizontal: 10,
-  },
-  tabButton: {
-    paddingVertical: 12,
+  actionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
     paddingHorizontal: 15,
-    backgroundColor: 'transparent',
+    borderRadius: 20,
+    backgroundColor: '#f0f0f0',
   },
-  tabButtonActive: {
-    borderBottomWidth: 2,
-    borderBottomColor: '#007AFF',
-  },
-  tabText: {
-    color: '#666',
+  actionButtonText: {
+    marginLeft: 5,
     fontWeight: '500',
+    color: '#333',
   },
-  tabTextActive: {
-    color: '#007AFF',
-    fontWeight: '600',
+  premiumButton: {
+    backgroundColor: '#FFF8E1',
+    borderWidth: 1,
+    borderColor: '#FFD700',
   },
-  contentGrid: {
+  premiumButtonText: {
+    color: '#FF9800',
+  },
+  contentSection: {
+    marginTop: 10,
+    backgroundColor: 'white',
     padding: 15,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 15,
   },
   contentItem: {
     marginBottom: 15,
-    borderRadius: 12,
+    borderRadius: 10,
     overflow: 'hidden',
   },
   thumbnailContainer: {
     position: 'relative',
-    height: 180,
   },
   thumbnail: {
     width: '100%',
-    height: '100%',
+    height: 180,
   },
   typeIconContainer: {
     position: 'absolute',
-    top: 10,
+    bottom: 10,
     right: 10,
     backgroundColor: 'rgba(0,0,0,0.6)',
     borderRadius: 15,
@@ -361,147 +441,25 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   contentInfo: {
-    padding: 15,
+    padding: 12,
   },
   contentTitle: {
-    fontWeight: 'bold',
     fontSize: 16,
-    marginBottom: 10,
+    fontWeight: 'bold',
+    marginBottom: 5,
   },
   contentStats: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   contentStat: {
-    fontSize: 14,
+    fontSize: 12,
     color: '#666',
     marginRight: 15,
   },
   contentDate: {
-    fontSize: 14,
+    fontSize: 12,
     color: '#999',
     marginLeft: 'auto',
-  },
-  emptyContentContainer: {
-    padding: 30,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  emptyContentText: {
-    marginTop: 10,
-    color: '#999',
-    fontSize: 16,
-  },
-  modalContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    padding: 20,
-  },
-  modalContent: {
-    backgroundColor: 'white',
-    borderRadius: 16,
-    maxHeight: '90%',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    borderBottomWidth: 1,
-    borderBottomColor: '#eaeaea',
-    paddingHorizontal: 20,
-    paddingVertical: 15,
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  closeButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#f0f0f0',
-  },
-  modalBody: {
-    padding: 20,
-  },
-  verificationIconContainer: {
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  verificationTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    textAlign: 'center',
-    marginBottom: 10,
-  },
-  verificationDescription: {
-    textAlign: 'center',
-    marginBottom: 20,
-    color: '#666',
-    lineHeight: 20,
-  },
-  verificationSteps: {
-    marginBottom: 25,
-  },
-  verificationStep: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 15,
-  },
-  stepNumber: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: '#007AFF',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 10,
-  },
-  stepNumberText: {
-    color: 'white',
-    fontWeight: 'bold',
-  },
-  stepText: {
-    flex: 1,
-    color: '#333',
-  },
-  startVerificationButton: {
-    backgroundColor: '#007AFF',
-    borderRadius: 12,
-    padding: 15,
-    alignItems: 'center',
-  },
-  startVerificationText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  centerContent: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    marginBottom: 20,
-  },
-  message: {
-    fontSize: 16,
-    color: '#666',
-    marginBottom: 20,
-  },
-  button: {
-    backgroundColor: '#007AFF',
-    padding: 15,
-    borderRadius: 12,
-  },
-  buttonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: 'bold',
   },
 });

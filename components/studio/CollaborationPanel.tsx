@@ -20,7 +20,7 @@ import CollaborationService, {
   CollaborationUser, 
   CollaborationMessage 
 } from '../../services/CollaborationService';
-import Colors from '../../constants/Colors';
+import Colors from '@/constants/Colors';
 
 interface CollaborationPanelProps {
   projectId: string;

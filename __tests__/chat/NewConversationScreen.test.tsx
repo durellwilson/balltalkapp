@@ -4,7 +4,7 @@ import { useRouter } from 'expo-router';
 import { useAuth } from '../../contexts/auth';
 import MessageService from '../../services/MessageService';
 import UserService from '../../services/UserService';
-import NewConversationScreen from '../../screens/chat/NewConversationScreen';
+import NewConversationScreen from '../../app/chat/NewConversationScreen';
 
 // Mock dependencies
 jest.mock('expo-router', () => ({

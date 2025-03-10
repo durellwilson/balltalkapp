@@ -13,7 +13,7 @@ import { Audio } from 'expo-av';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../hooks/useTheme';
-import Colors from '../../constants/Colors';
+import Colors from '@/constants/Colors';
 
 interface EnhancedWaveformProps {
   audioUri: string;

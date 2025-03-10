@@ -14,8 +14,8 @@ import {
   Timestamp,
   onSnapshot
 } from 'firebase/firestore';
-import { User } from '../models/User';
-import { ExtendedUser, UserRole } from '../contexts/auth';
+import { User } from '../../models/User';
+import { ExtendedUser, UserRole } from '../../contexts/auth';
 import NetworkErrorHandler from './NetworkErrorHandler';
 
 // User profile interface

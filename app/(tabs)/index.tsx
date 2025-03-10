@@ -145,7 +145,7 @@ const TabsHome = () => {
   <Text style={styles.title}>BallTalk</Text>
   <TouchableOpacity 
     style={styles.profileButton}
-    onPress={() => router.push('/profile/1')}
+    onPress={() => router.push('/(tabs)/profile/1')}
   >
     <Ionicons name="person-circle" size={40} color="#007AFF" />
   </TouchableOpacity>
@@ -221,7 +221,7 @@ const TabsHome = () => {
         {/* Community Feature */}
         <TouchableOpacity
           style={styles.featureCard}
-          onPress={() => router.push('/community')}
+          onPress={() => router.push('/chat/community')}
         >
           <View style={[styles.featureIcon, { backgroundColor: '#34C759' }]}>
             <Ionicons name="people" size={32} color="white" />
@@ -235,7 +235,7 @@ const TabsHome = () => {
         {/* Fan Hub Feature */}
         <TouchableOpacity
           style={styles.featureCard}
-          onPress={() => router.push('/fan-hub')}
+          onPress={() => router.push('/chat/fan-hub')}
         >
           <View style={[styles.featureIcon, { backgroundColor: '#5856D6' }]}>
             <Ionicons name="star" size={32} color="white" />

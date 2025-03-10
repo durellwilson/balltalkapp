@@ -7,7 +7,7 @@
 
 import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system';
-import { AudioEffectsSettings } from '../components/audio/processing/AudioEffectsPanel';
+import { AudioEffectsSettings } from '../../components/audio/processing/AudioEffectsPanel';
 
 interface AudioEffects {
   compression: boolean;

@@ -1,4 +1,4 @@
-import { FirebaseUser } from '../contexts/auth';
+import { FirebaseUser } from '../../contexts/auth';
 
 /**
  * Authentication provider types

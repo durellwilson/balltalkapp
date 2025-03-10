@@ -29,7 +29,7 @@ import {
   NEUTRAL_400, 
   NEUTRAL_600, 
   NEUTRAL_800 
-} from '../../constants/Colors';
+} from '@/constants/Colors';
 import * as Linking from 'expo-linking';
 import * as Clipboard from 'expo-clipboard';
 

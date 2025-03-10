@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, Button, StyleSheet } from 'react-native';
-import { inspectObject, safePrint, safeRender } from '../utils/objectDebugger';
+import { inspectObject, safePrint, safeRender } from '../../utils/objectDebugger';
 
 // Example component demonstrating how to prevent and debug [object Object] errors
 const ObjectDebuggingExample: React.FC = () => {

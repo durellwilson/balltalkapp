@@ -1,6 +1,16 @@
-import React, { useState, useEffect } from 'react';
-import { View, Button, Text, StyleSheet, Platform } from 'react-native';
-import { Audio, InterruptionModeIOS, InterruptionModeAndroid } from 'expo-av';
+import React, { useState, useEffect, useRef } from 'react';
+import { 
+  View, 
+  Text, 
+  StyleSheet, 
+  Platform, 
+  TouchableOpacity, 
+  ActivityIndicator,
+  Animated,
+  Easing
+} from 'react-native';
+import { Audio } from 'expo-av';
+import { Ionicons } from '@expo/vector-icons';
 
 export default function BasicRecorder() {
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
@@ -8,41 +18,51 @@ export default function BasicRecorder() {
   const [status, setStatus] = useState('Ready');
   const [recordingUri, setRecordingUri] = useState<string | null>(null);
   const [permissionStatus, setPermissionStatus] = useState<string | null>(null);
-
+  const [isRecording, setIsRecording] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [recordingDuration, setRecordingDuration] = useState(0);
+  const [playbackPosition, setPlaybackPosition] = useState(0);
+  const [playbackDuration, setPlaybackDuration] = useState(0);
+  
+  // Animation values
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const levelAnim = useRef(new Animated.Value(0)).current;
+  
+  // Start pulse animation
   useEffect(() => {
-    // Request permissions on component mount
-    const getPermissions = async () => {
-      try {
-        const { status } = await Audio.requestPermissionsAsync();
-        setPermissionStatus(status);
-        
-        if (status !== 'granted') {
-          setStatus('Microphone permission not granted');
-          return;
-        }
-        
-        // Set audio mode
-        await Audio.setAudioModeAsync({
-          allowsRecordingIOS: true,
-          playsInSilentModeIOS: true,
-          staysActiveInBackground: true,
-          shouldDuckAndroid: true,
-          interruptionModeIOS: InterruptionModeIOS.DoNotMix,
-          interruptionModeAndroid: InterruptionModeAndroid.DoNotMix,
-          playThroughEarpieceAndroid: false,
-        });
-        
-        setStatus('Ready to record');
-      } catch (err) {
-        console.error('Failed to get permissions', err);
-        setStatus('Error getting permissions');
-        setPermissionStatus('error');
-      }
+    if (isRecording) {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, {
+            toValue: 1.2,
+            duration: 500,
+            useNativeDriver: true,
+            easing: Easing.inOut(Easing.ease),
+          }),
+          Animated.timing(pulseAnim, {
+            toValue: 1,
+            duration: 500,
+            useNativeDriver: true,
+            easing: Easing.inOut(Easing.ease),
+          }),
+        ])
+      ).start();
+    } else {
+      pulseAnim.stopAnimation();
+    }
+    
+    return () => {
+      pulseAnim.stopAnimation();
     };
-    
+  }, [isRecording, pulseAnim]);
+  
+  // Check permissions on mount
+  useEffect(() => {
     getPermissions();
-    
-    // Cleanup function
+  }, []);
+  
+  // Clean up on unmount
+  useEffect(() => {
     return () => {
       if (recording) {
         recording.stopAndUnloadAsync();
@@ -51,118 +71,225 @@ export default function BasicRecorder() {
         sound.unloadAsync();
       }
     };
-  }, []);
+  }, [recording, sound]);
+  
+  const getPermissions = async () => {
+    try {
+      const permission = await Audio.requestPermissionsAsync();
+      setPermissionStatus(permission.status);
+      
+      if (permission.status === 'granted') {
+        await Audio.setAudioModeAsync({
+          allowsRecordingIOS: true,
+          playsInSilentModeIOS: true,
+          staysActiveInBackground: true,
+          shouldDuckAndroid: true,
+          interruptionModeIOS: 1, // DoNotMix
+          interruptionModeAndroid: 1, // DoNotMix
+          playThroughEarpieceAndroid: false,
+        });
+      }
+    } catch (error) {
+      console.error('Failed to get permissions:', error);
+      setStatus('Permission error');
+    }
+  };
   
   async function startRecording() {
     try {
       if (permissionStatus !== 'granted') {
-        setStatus('Cannot record without microphone permission');
+        await getPermissions();
         return;
       }
       
-      // Make sure any previous recording is stopped
-      if (recording) {
-        await recording.stopAndUnloadAsync();
-      }
-      
-      // Unload any previous sound
+      // Unload any existing recording
       if (sound) {
         await sound.unloadAsync();
         setSound(null);
       }
       
       setStatus('Recording...');
-      const { recording: newRecording } = await Audio.Recording.createAsync(
-        Audio.RecordingOptionsPresets.HIGH_QUALITY
-      );
+      setRecordingDuration(0);
+      setRecordingUri(null);
+      
+      const newRecording = new Audio.Recording();
+      await newRecording.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+      newRecording.setOnRecordingStatusUpdate(onRecordingStatusUpdate);
+      await newRecording.startAsync();
+      
       setRecording(newRecording);
-    } catch (err) {
-      console.error('Failed to start recording', err);
-      setStatus(`Failed to record: ${err instanceof Error ? err.message : String(err)}`);
+      setIsRecording(true);
+    } catch (error) {
+      console.error('Failed to start recording:', error);
+      setStatus('Recording failed');
+    }
+  }
+  
+  function onRecordingStatusUpdate(status: Audio.RecordingStatus) {
+    if (status.isRecording) {
+      setRecordingDuration(status.durationMillis / 1000);
+      
+      // Animate level based on metering level if available
+      if (status.metering !== undefined && status.metering > -50) {
+        const normalizedLevel = (status.metering + 50) / 50; // Convert -50..0 to 0..1
+        levelAnim.setValue(normalizedLevel);
+      }
     }
   }
   
   async function stopRecording() {
-    if (!recording) {
-      setStatus('No active recording to stop');
-      return;
-    }
-    
     try {
       setStatus('Processing...');
+      
+      if (!recording) return;
+      
       await recording.stopAndUnloadAsync();
       const uri = recording.getURI();
-      setRecordingUri(uri);
-      setStatus(`Recording saved: ${uri}`);
+      
+      if (uri) {
+        setRecordingUri(uri);
+        await loadRecordedSound(uri);
+      }
+      
       setRecording(null);
-    } catch (err) {
-      console.error('Failed to stop recording', err);
-      setStatus(`Error stopping recording: ${err instanceof Error ? err.message : String(err)}`);
+      setIsRecording(false);
+      setStatus('Ready');
+    } catch (error) {
+      console.error('Failed to stop recording:', error);
+      setStatus('Processing failed');
+      setIsRecording(false);
     }
   }
   
-  async function playSound() {
-    if (!recordingUri) {
-      setStatus('No recording to play');
-      return;
-    }
-    
+  async function loadRecordedSound(uri: string) {
     try {
-      // Unload any existing sound
-      if (sound) {
-        await sound.unloadAsync();
-      }
+      setStatus('Loading...');
       
-      setStatus('Loading sound...');
       const { sound: newSound } = await Audio.Sound.createAsync(
-        { uri: recordingUri },
-        { shouldPlay: true }
+        { uri },
+        { shouldPlay: false },
+        onPlaybackStatusUpdate
       );
       
       setSound(newSound);
-      setStatus('Playing...');
-      
-      // Listen for playback status updates
-      newSound.setOnPlaybackStatusUpdate((status) => {
-        if (status.isLoaded && status.didJustFinish) {
-          setStatus('Playback finished');
-        }
-      });
-    } catch (err) {
-      console.error('Failed to play sound', err);
-      setStatus(`Error playing sound: ${err instanceof Error ? err.message : String(err)}`);
+      setStatus('Ready');
+    } catch (error) {
+      console.error('Failed to load sound:', error);
+      setStatus('Loading failed');
     }
+  }
+  
+  const onPlaybackStatusUpdate = (status: any) => {
+    if (status.isPlaying) {
+      setIsPlaying(true);
+      setPlaybackPosition(status.positionMillis / 1000);
+      setPlaybackDuration(status.durationMillis / 1000);
+    } else {
+      setIsPlaying(false);
+      
+      if (status.didJustFinish) {
+        setPlaybackPosition(0);
+      }
+    }
+  };
+  
+  async function playSound() {
+    try {
+      if (!sound) return;
+      
+      if (isPlaying) {
+        await sound.pauseAsync();
+        setIsPlaying(false);
+      } else {
+        await sound.playFromPositionAsync(playbackPosition * 1000);
+        setIsPlaying(true);
+      }
+    } catch (error) {
+      console.error('Failed to play sound:', error);
+      setStatus('Playback failed');
+    }
+  }
+  
+  function formatTime(seconds: number): string {
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = Math.floor(seconds % 60);
+    return `${minutes}:${remainingSeconds < 10 ? '0' : ''}${remainingSeconds}`;
   }
   
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Basic Audio Recorder</Text>
-      <Text style={styles.statusText}>{status}</Text>
+      <View style={styles.statusContainer}>
+        <Text style={styles.statusText}>{status}</Text>
+        {isRecording && (
+          <Text style={styles.durationText}>
+            {formatTime(recordingDuration)}
+          </Text>
+        )}
+        {recordingUri && !isRecording && (
+          <Text style={styles.durationText}>
+            {formatTime(playbackPosition)} / {formatTime(playbackDuration)}
+          </Text>
+        )}
+      </View>
       
-      <View style={styles.buttonContainer}>
-        <Button 
-          title={recording ? 'Stop Recording' : 'Start Recording'} 
-          onPress={recording ? stopRecording : startRecording}
-          disabled={permissionStatus !== 'granted'} 
+      <View style={styles.visualizerContainer}>
+        <Animated.View 
+          style={[
+            styles.levelIndicator, 
+            { 
+              height: levelAnim.interpolate({
+                inputRange: [0, 1],
+                outputRange: [5, 100]
+              }),
+              opacity: isRecording ? 1 : 0 
+            }
+          ]} 
         />
       </View>
       
-      {recordingUri && (
-        <View style={styles.buttonContainer}>
-          <Button 
-            title="Play Recording" 
-            onPress={playSound}
-          />
-        </View>
-      )}
-      
-      <View style={styles.infoContainer}>
-        <Text style={styles.infoText}>Platform: {Platform.OS}</Text>
-        <Text style={styles.infoText}>Microphone Permission: {permissionStatus || 'unknown'}</Text>
-        {recordingUri && (
-          <Text style={styles.infoText} numberOfLines={2} ellipsizeMode="middle">
-            Recording URI: {recordingUri}
-          </Text>
+      <View style={styles.controlsContainer}>
+        {!isRecording && !recordingUri && (
+          <TouchableOpacity 
+            style={styles.recordButton} 
+            onPress={startRecording}
+            disabled={permissionStatus !== 'granted'}
+          >
+            <Ionicons name="mic" size={32} color="white" />
+          </TouchableOpacity>
+        )}
+        
+        {isRecording && (
+          <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
+            <TouchableOpacity 
+              style={styles.stopButton} 
+              onPress={stopRecording}
+            >
+              <Ionicons name="square" size={32} color="white" />
+            </TouchableOpacity>
+          </Animated.View>
+        )}
+        
+        {recordingUri && !isRecording && (
+          <View style={styles.playbackControls}>
+            <TouchableOpacity 
+              style={styles.playButton} 
+              onPress={playSound}
+            >
+              <Ionicons 
+                name={isPlaying ? "pause" : "play"} 
+                size={32} 
+                color="white" 
+              />
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              style={styles.newRecordingButton} 
+              onPress={startRecording}
+            >
+              <Ionicons name="refresh" size={24} color="white" />
+              <Text style={styles.actionText}>New Recording</Text>
+            </TouchableOpacity>
+          </View>
         )}
       </View>
     </View>
@@ -171,34 +298,99 @@ export default function BasicRecorder() {
 
 const styles = StyleSheet.create({
   container: {
+    flex: 1,
     padding: 20,
-    backgroundColor: '#f5f5f5',
-    borderRadius: 8,
-    margin: 16,
+    justifyContent: 'space-between',
+    backgroundColor: '#f8f8f8',
   },
-  title: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    marginBottom: 16,
-    color: '#333',
+  statusContainer: {
+    alignItems: 'center',
+    marginBottom: 20,
   },
   statusText: {
-    fontSize: 16,
-    marginBottom: 20,
-    color: '#555',
+    fontSize: 18,
+    fontWeight: '500',
+    color: '#333',
+    marginBottom: 5,
   },
-  buttonContainer: {
-    marginBottom: 16,
+  durationText: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#007AFF',
   },
-  infoContainer: {
+  visualizerContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  levelIndicator: {
+    width: 20,
+    backgroundColor: '#007AFF',
+    borderRadius: 10,
+  },
+  controlsContainer: {
+    alignItems: 'center',
     marginTop: 20,
-    padding: 12,
-    backgroundColor: '#e9e9e9',
-    borderRadius: 6,
   },
-  infoText: {
-    fontSize: 14,
-    color: '#666',
-    marginBottom: 4,
+  recordButton: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#FF3B30',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  stopButton: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#FF3B30',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  playbackControls: {
+    alignItems: 'center',
+  },
+  playButton: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#34C759',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  newRecordingButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#007AFF',
+    paddingHorizontal: 15,
+    paddingVertical: 10,
+    borderRadius: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 3,
+  },
+  actionText: {
+    marginLeft: 8,
+    color: 'white',
+    fontWeight: '500',
   },
 }); 

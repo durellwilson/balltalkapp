@@ -22,6 +22,8 @@ export type UserRole = 'athlete' | 'fan' | 'admin' | 'guest';
 
 // Define extended user type with role
 export interface ExtendedUser extends Omit<FirebaseUser, 'toJSON'> {
+  isVerified: React.JSX.Element;
+  bio: string;
   role?: UserRole;
   username?: string;
   profileComplete?: boolean;

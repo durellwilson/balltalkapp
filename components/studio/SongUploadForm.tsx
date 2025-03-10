@@ -10,7 +10,7 @@ import {
   ActivityIndicator
 } from 'react-native';
 import { useAuth } from '../../contexts/auth';
-import Colors from '../../constants/Colors';
+import Colors from '@/constants/Colors';
 import { Ionicons } from '@expo/vector-icons';
 import { Picker } from '@react-native-picker/picker';
 // Placeholder for file upload - replace with actual implementation later

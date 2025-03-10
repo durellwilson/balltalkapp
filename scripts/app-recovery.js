@@ -300,7 +300,7 @@ function createOrUpdateThemeProvider() {
   const themeProviderContent = `
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { useColorScheme } from 'react-native';
-import { light, dark, ThemeColors } from '../constants/Colors';
+import { light, dark, ThemeColors } from '@constants/Colors';
 
 // Theme context type
 interface ThemeContextType {

@@ -15,7 +15,7 @@ import { Audio } from 'expo-av';
 import { SongService } from '../../services/SongService';
 import { useAuth } from '../../hooks/useAuth';
 import { useTheme } from '../../hooks/useTheme';
-import Colors from '../../constants/Colors';
+import Colors from '@/constants/Colors';
 
 interface TrackBrowserProps {
   onTrackSelect: (track: any) => void;

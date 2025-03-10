@@ -23,11 +23,11 @@ import {
   getStorage,
   deleteObject
 } from 'firebase/storage';
-import type { Track, Collaborator } from '../components/studio/StudioTypes';
+import type { Track, Collaborator } from '../../components/studio/StudioTypes';
 import { Audio } from 'expo-av';
 import { Platform } from 'react-native';
 import { v4 as uuidv4 } from 'uuid';
-import { getDevicePlatform, getActiveDeviceSettings, simulateNetworkRequest } from '../utils/deviceSimulation';
+import { getDevicePlatform, getActiveDeviceSettings, simulateNetworkRequest } from '../../utils/deviceSimulation';
 import { db, storage } from '../src/lib/firebase';
 import storage_lib from '@react-native-firebase/storage';
 import * as FileSystem from 'expo-file-system';

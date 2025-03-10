@@ -19,7 +19,7 @@ import {
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { v4 as uuidv4 } from 'uuid';
-import { AthleteVerification } from '../models/User';
+import { AthleteVerification } from '../../models/User';
 
 // Cast db and storage to proper types
 const firebaseDb = db;
@@ -731,7 +731,7 @@ class VerificationService {
   }
   
   // Reset verification status (for testing)
-  async resetVerificationStatus(userId: string): Promise<boolean> {
+  async resetVerificationStatus(userId: string, p0: string): Promise<boolean> {
     try {
       await updateDoc(doc(firebaseDb, 'users', userId), {
         isVerified: false,

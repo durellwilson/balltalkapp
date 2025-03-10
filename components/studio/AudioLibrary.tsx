@@ -16,7 +16,7 @@ import { Audio } from 'expo-av';
 import { Ionicons, MaterialIcons, FontAwesome5 } from '@expo/vector-icons';
 import { useAuth } from '../../contexts/auth';
 import AudioStorageService, { AudioFileMetadata, StreamingTrack } from '../../services/AudioStorageService';
-import Colors from '../../constants/Colors';
+import Colors from '@/constants/Colors';
 
 interface AudioLibraryProps {
   isVisible: boolean;

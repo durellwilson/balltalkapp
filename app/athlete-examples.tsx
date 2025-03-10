@@ -1,18 +1,19 @@
 import React, { useState } from 'react';
 import { View, StyleSheet, ScrollView, SafeAreaView, StatusBar } from 'react-native';
-import { useRouter, Stack } from 'expo-router';
-import { defaultTheme } from '../constants';
+import { useRouter } from 'expo-router';
+import { Stack } from 'expo-router';
+import { defaultTheme } from '@/constants';
 import type { Theme } from '../constants/Theme';
-import { Text, Button } from '../components/themed';
+import { Text, Button } from '@/components/themed';
 import { AthleteProfileCard, AthleteDashboard } from '../components';
 
 /**
- * AthleteExamples screen
+ * AthletesExample screen
  * 
- * This standalone screen demonstrates the AthleteProfileCard and AthleteDashboard components.
+ * This screen demonstrates the AthleteProfileCard and AthleteDashboard components.
  * It shows how to integrate athlete profiles into your app's dashboard.
  */
-export default function AthleteExamples() {
+export default function AthletesExample() {
   const router = useRouter();
   const [theme] = useState<Theme>(defaultTheme as unknown as Theme);
 
@@ -45,7 +46,6 @@ export default function AthleteExamples() {
           title: 'Athlete Profiles',
           headerStyle: { backgroundColor: theme.colors.surface },
           headerTintColor: theme.colors.text,
-          headerBackTitle: 'Back',
         }} 
       />
 
@@ -64,7 +64,7 @@ export default function AthleteExamples() {
             <Button 
               title="Back to Home" 
               variant="outline"
-              onPress={() => router.back()}
+              onPress={() => router.push('/')}
               style={styles.button}
             />
           </View>
@@ -90,6 +90,7 @@ export default function AthleteExamples() {
             onProfilePress={() => console.log(`Navigate to ${athleteData.name}'s profile`)}
             onMessagePress={() => console.log(`Message ${athleteData.name}`)}
             onMusicPress={() => console.log(`View ${athleteData.name}'s music`)}
+            theme={theme}
           />
         </View>
 
@@ -101,6 +102,9 @@ export default function AthleteExamples() {
           </Text>
           
           <AthleteDashboard 
+            theme={theme}
+            limit={3} // Only show the first 3 athletes
+            showTitle={true}
             onNavigateToProfile={() => router.push('/athlete-profile')}
             onNavigateToStudio={() => router.push('/studio')}
           />
@@ -141,6 +145,8 @@ export default function AthleteExamples() {
   theme={theme}
   limit={3} // Optional: limit the number of cards
   showTitle={true} // Optional: show section title
+  onNavigateToProfile={() => {/* navigate to profile */}}
+  onNavigateToStudio={() => {/* navigate to studio */}}
 />`}
             </Text>
           </View>

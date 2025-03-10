@@ -12,7 +12,7 @@ import {
   Dimensions
 } from 'react-native';
 import { useAuth } from '../../contexts/auth';
-import Colors from '../../constants/Colors';
+import Colors from '@/constants/Colors';
 import { Ionicons, MaterialIcons, AntDesign, Feather } from '@expo/vector-icons';
 
 // Types for content

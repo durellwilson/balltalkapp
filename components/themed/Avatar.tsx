@@ -9,7 +9,7 @@ import {
   TouchableOpacity,
   ImageStyle,
 } from 'react-native';
-import { defaultTheme, ThemeType } from '../../constants';
+import { defaultTheme, ThemeType } from '@/constants';
 import Text from './Text';
 
 // Avatar sizes

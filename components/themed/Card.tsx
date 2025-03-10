@@ -7,7 +7,7 @@ import {
   TouchableOpacity,
   TouchableOpacityProps,
 } from 'react-native';
-import { defaultTheme, ThemeType } from '../../constants';
+import { defaultTheme, ThemeType } from '@/constants';
 
 // Card variants
 export type CardVariant = 'default' | 'elevated' | 'outlined';

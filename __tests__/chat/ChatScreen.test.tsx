@@ -3,7 +3,7 @@ import { render, fireEvent, waitFor } from '@testing-library/react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../contexts/auth';
 import MessageService from '../../services/MessageService';
-import ChatScreen from '../../screens/chat/ChatScreen';
+import ChatScreen from '../../app/chat/ChatScreen';
 
 // Mock dependencies
 jest.mock('expo-router', () => ({

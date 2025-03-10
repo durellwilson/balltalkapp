@@ -15,7 +15,7 @@ import SocialAuthButtons from './SocialAuthButtons';
 import { router } from 'expo-router';
 import { useAuth } from '../../contexts/auth';
 import { AntDesign } from '@expo/vector-icons';
-import Colors from '../../constants/Colors';
+import Colors from '@/constants/Colors';
 import AuthService from '../../services/AuthService';
 
 const FanHubSignup = () => {

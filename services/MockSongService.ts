@@ -1,4 +1,4 @@
-import { Song } from '../models/Song';
+import { Song } from '../../models/Song';
 
 // Mock data for testing
 const mockSongs: Song[] = [

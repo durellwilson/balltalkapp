@@ -29,7 +29,12 @@ export default function ChatScreen() {
     if (!user) return;
 
     // Subscribe to conversations
-    const unsubscribe = ChatService.getConversations(user.uid, (data) => {
+    const unsubscribe = ChatService.getConversations(user.uid, (data, error) => {
+      if (error) {
+        setError(error);
+        setLoading(false);
+        return;
+      }
       setConversations(data);
       setLoading(false);
     });

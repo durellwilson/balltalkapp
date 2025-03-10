@@ -14,7 +14,7 @@ import { useRouter } from 'expo-router';
 import { useAuth } from '../../hooks/useAuth';
 import SongService from '../../services/SongService';
 import { Song } from '../../models/Song';
-import Colors from '../../constants/Colors';
+import Colors from '@/constants/Colors';
 import { formatDuration } from '../../utils/formatting';
 
 const SongsScreen: React.FC = () => {

@@ -29,7 +29,7 @@ interface EmptyStateProps {
  *   title="No songs yet"
  *   message="Your uploaded songs will appear here"
  *   actionLabel="Upload a Song"
- *   onAction={() => navigation.navigate('Upload')}
+ *   onAction={() => router.push('/upload')}
  * />
  */
 const EmptyState: React.FC<EmptyStateProps> = ({

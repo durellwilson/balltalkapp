@@ -14,11 +14,12 @@ import {
 } from 'react-native';
 import { useAuth } from '../../contexts/auth';
 import VerificationService from '../../services/VerificationService';
-import Colors from '../../constants/Colors';
+import Colors from '@/constants/Colors';
 import { AntDesign, MaterialIcons, Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import { shadows } from '../../utils/shadowStyles';
+import { Input, Button } from '../themed';
 
 interface AthleteVerificationFormProps {
   onCancel: () => void;
@@ -30,64 +31,29 @@ const AthleteVerificationForm: React.FC<AthleteVerificationFormProps> = ({
   onComplete
 }) => {
   const { user } = useAuth();
-  const [isLoading, setIsLoading] = useState(false);
+  const [step, setStep] = useState(1);
+  const [loading, setLoading] = useState(false);
+  const [formData, setFormData] = useState({
+    fullName: '',
+    sport: '',
+    team: '',
+    position: '',
+    email: '',
+    phone: '',
+    socialMediaLinks: '',
+    idImage: null as string | null,
+    proofImage: null as string | null,
+    additionalDocuments: [] as string[],
+  });
 
-  // Form fields
-  const [fullName, setFullName] = useState('');
-  const [sport, setSport] = useState('');
-  const [league, setLeague] = useState('');
-  const [team, setTeam] = useState('');
-  const [profilePhotoUri, setProfilePhotoUri] = useState<string | null>(null);
-  const [idPhotoUri, setIdPhotoUri] = useState<string | null>(null);
-  const [documentUri, setDocumentUri] = useState<string | null>(null);
-  const [documentName, setDocumentName] = useState<string | null>(null);
-  const [additionalInfo, setAdditionalInfo] = useState('');
-  const [isSportModalVisible, setIsSportModalVisible] = useState(false);
-  const [isLeagueModalVisible, setIsLeagueModalVisible] = useState(false);
-    const [teamRosterUri, setTeamRosterUri] = useState<string | null>(null);
-    const [teamRosterName, setTeamRosterName] = useState<string | null>(null);
-    const [leagueAffiliationUri, setLeagueAffiliationUri] = useState<string | null>(null);
-    const [leagueAffiliationName, setLeagueAffiliationName] = useState<string | null>(null);
-
-  const sports = ['Basketball', 'Football', 'Baseball', 'Soccer', 'Tennis', 'Golf'];
-  const leagues = ['NBA', 'NFL', 'MLB', 'MLS', 'ATP', 'PGA'];
-
-  // Handle image picking for profile photo
-  const pickProfileImage = async () => {
-    try {
-      const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
-
-      if (!permissionResult.granted) {
-        Alert.alert('Permission Required', 'You need to grant access to your photo library to upload images.');
-        return;
-      }
-
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [1, 1],
-        quality: 0.8,
-      });
-
-      if (!result.canceled && result.assets && result.assets.length > 0) {
-        setProfilePhotoUri(result.assets[0].uri);
-      }
-    } catch (error) {
-      console.error('Error picking profile image:', error);
-      Alert.alert('Error', 'Failed to select image. Please try again.');
-    }
+  // Handle form input changes
+  const handleChange = (field: string, value: string) => {
+    setFormData(prev => ({ ...prev, [field]: value }));
   };
 
-  // Handle image picking for ID photo
-  const pickIdImage = async () => {
+  // Pick image from gallery
+  const pickImage = async (field: 'idImage' | 'proofImage') => {
     try {
-      const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
-
-      if (!permissionResult.granted) {
-        Alert.alert('Permission Required', 'You need to grant access to your photo library to upload images.');
-        return;
-      }
-
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
@@ -96,65 +62,41 @@ const AthleteVerificationForm: React.FC<AthleteVerificationFormProps> = ({
       });
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
-        setIdPhotoUri(result.assets[0].uri);
+        setFormData(prev => ({ ...prev, [field]: result.assets[0].uri }));
       }
     } catch (error) {
-      console.error('Error picking ID image:', error);
-      Alert.alert('Error', 'Failed to select image. Please try again.');
+      console.error('Error picking image:', error);
+      Alert.alert('Error', 'Failed to pick image. Please try again.');
     }
   };
 
-  // Handle document picking
+  // Pick document
   const pickDocument = async () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({
         type: ['application/pdf', 'image/*'],
-        copyToCacheDirectory: true
+        copyToCacheDirectory: true,
       });
 
       if (result.canceled === false && result.assets && result.assets.length > 0) {
-        setDocumentUri(result.assets[0].uri);
-        setDocumentName(result.assets[0].name);
+        setFormData(prev => ({
+          ...prev,
+          additionalDocuments: [...prev.additionalDocuments, result.assets[0].uri],
+        }));
       }
     } catch (error) {
       console.error('Error picking document:', error);
-      Alert.alert('Error', 'Failed to select document. Please try again.');
+      Alert.alert('Error', 'Failed to pick document. Please try again.');
     }
   };
 
-    const pickTeamRoster = async () => {
-        try {
-            const result = await DocumentPicker.getDocumentAsync({
-                type: ['application/pdf', 'image/*'],
-                copyToCacheDirectory: true
-            });
-
-            if (result.canceled === false && result.assets && result.assets.length > 0) {
-                setTeamRosterUri(result.assets[0].uri);
-                setTeamRosterName(result.assets[0].name);
-            }
-        } catch (error) {
-            console.error('Error picking team roster document:', error);
-            Alert.alert('Error', 'Failed to select document. Please try again.');
-        }
-    };
-
-    const pickLeagueAffiliation = async () => {
-        try {
-            const result = await DocumentPicker.getDocumentAsync({
-                type: ['application/pdf', 'image/*'],
-                copyToCacheDirectory: true
-            });
-
-            if (result.canceled === false && result.assets && result.assets.length > 0) {
-                setLeagueAffiliationUri(result.assets[0].uri);
-                setLeagueAffiliationName(result.assets[0].name);
-            }
-        } catch (error) {
-            console.error('Error picking league affiliation document:', error);
-            Alert.alert('Error', 'Failed to select document. Please try again.');
-        }
-    };
+  // Remove document
+  const removeDocument = (index: number) => {
+    setFormData(prev => ({
+      ...prev,
+      additionalDocuments: prev.additionalDocuments.filter((_, i) => i !== index),
+    }));
+  };
 
   // Handle form submission
   const handleSubmit = async () => {
@@ -164,85 +106,64 @@ const AthleteVerificationForm: React.FC<AthleteVerificationFormProps> = ({
     }
 
     // Validate required fields
-    if (!fullName || !sport || !league || !team) {
+    if (!formData.fullName || !formData.sport || !formData.team) {
       Alert.alert('Missing Information', 'Please fill in all required fields.');
       return;
     }
 
-    if (!profilePhotoUri) {
-      Alert.alert('Missing Photo', 'Please upload a profile photo for verification.');
-      return;
-    }
-
-    if (!idPhotoUri) {
+    if (!formData.idImage) {
       Alert.alert('Missing ID', 'Please upload a photo of your ID for verification.');
       return;
     }
 
-    setIsLoading(true);
+    setLoading(true);
     try {
       // Prepare verification data
       const verificationData = {
         userId: user.uid,
-        fullName,
-        sport,
-        league,
-        team,
-        profilePhotoUri,
-        idPhotoUri,
-        documentUri,
-        documentName,
-        additionalInfo,
-            teamRosterUri,
-            teamRosterName,
-            leagueAffiliationUri,
-            leagueAffiliationName,
+        fullName: formData.fullName,
+        sport: formData.sport,
+        team: formData.team,
+        position: formData.position,
+        email: formData.email,
+        phone: formData.phone,
+        socialMediaLinks: formData.socialMediaLinks,
+        idImage: formData.idImage,
+        proofImage: formData.proofImage,
+        additionalDocuments: formData.additionalDocuments,
         submittedAt: new Date().toISOString(),
         status: 'pending'
       };
 
-
       // Upload documents to storage and get URLs
       const documentBlobs: Blob[] = [];
 
-      // Convert profile photo URI to blob
-      if (profilePhotoUri) {
-        const profilePhotoResponse = await fetch(profilePhotoUri);
-        const profilePhotoBlob = await profilePhotoResponse.blob();
-        documentBlobs.push(profilePhotoBlob);
-      }
-
       // Convert ID photo URI to blob
-      if (idPhotoUri) {
-        const idPhotoResponse = await fetch(idPhotoUri);
+      if (formData.idImage) {
+        const idPhotoResponse = await fetch(formData.idImage);
         const idPhotoBlob = await idPhotoResponse.blob();
         documentBlobs.push(idPhotoBlob);
       }
 
-      // Convert document URI to blob if exists
-      // Convert document URI to blob if exists
-      if (documentUri) {
-        const documentResponse = await fetch(documentUri);
-        const documentBlob = await documentResponse.blob();
-        documentBlobs.push(documentBlob);
+      // Convert proof image URI to blob
+      if (formData.proofImage) {
+        const proofImageResponse = await fetch(formData.proofImage);
+        const proofImageBlob = await proofImageResponse.blob();
+        documentBlobs.push(proofImageBlob);
       }
-        if (teamRosterUri) {
-            const teamRosterResponse = await fetch(teamRosterUri);
-            const teamRosterBlob = await teamRosterResponse.blob();
-            documentBlobs.push(teamRosterBlob);
-        }
 
-        if (leagueAffiliationUri) {
-            const leagueAffiliationResponse = await fetch(leagueAffiliationUri);
-            const leagueAffiliationBlob = await leagueAffiliationResponse.blob();
-            documentBlobs.push(leagueAffiliationBlob);
-        }
+      // Convert additional documents to blobs
+      for (const docUri of formData.additionalDocuments) {
+        const docResponse = await fetch(docUri);
+        const docBlob = await docResponse.blob();
+        documentBlobs.push(docBlob);
+      }
 
       // Submit verification request using the service
       await VerificationService.submitVerificationRequest(
         user.uid,
-        league, // League affiliation
-        team,   // Team affiliation
+        verificationData.sport,
+        verificationData.team,
         documentBlobs
       );
       
@@ -255,289 +176,260 @@ const AthleteVerificationForm: React.FC<AthleteVerificationFormProps> = ({
       console.error('Error submitting verification:', error);
       Alert.alert('Submission Error', 'Failed to submit verification. Please try again later.');
     } finally {
-      setIsLoading(false);
+      setLoading(false);
+    }
+  };
+
+  // Validate current step
+  const validateStep = () => {
+    if (step === 1) {
+      return formData.fullName && formData.sport && formData.team;
+    } else if (step === 2) {
+      return formData.email;
+    } else if (step === 3) {
+      return formData.idImage && formData.proofImage;
+    }
+    return true;
+  };
+
+  // Go to next step
+  const nextStep = () => {
+    if (validateStep()) {
+      if (step < 4) {
+        setStep(step + 1);
+      } else {
+        handleSubmit();
+      }
+    } else {
+      Alert.alert('Missing Information', 'Please fill in all required fields.');
+    }
+  };
+
+  // Go to previous step
+  const prevStep = () => {
+    if (step > 1) {
+      setStep(step - 1);
+    } else {
+      onCancel();
+    }
+  };
+
+  // Render step 1: Basic Information
+  const renderStep1 = () => (
+    <View style={styles.stepContainer}>
+      <Text style={styles.stepTitle}>Basic Information</Text>
+      <Text style={styles.stepDescription}>
+        Please provide your basic information to begin the verification process.
+      </Text>
+
+      <Input
+        label="Full Name *"
+        value={formData.fullName}
+        onChangeText={(text) => handleChange('fullName', text)}
+        placeholder="Enter your full name"
+        autoCapitalize="words"
+      />
+
+      <Input
+        label="Sport *"
+        value={formData.sport}
+        onChangeText={(text) => handleChange('sport', text)}
+        placeholder="e.g. Basketball, Football, etc."
+      />
+
+      <Input
+        label="Team (if applicable)"
+        value={formData.team}
+        onChangeText={(text) => handleChange('team', text)}
+        placeholder="Enter your team name"
+      />
+
+      <Input
+        label="Position (if applicable)"
+        value={formData.position}
+        onChangeText={(text) => handleChange('position', text)}
+        placeholder="e.g. Point Guard, Quarterback, etc."
+      />
+    </View>
+  );
+
+  // Render step 2: Contact Information
+  const renderStep2 = () => (
+    <View style={styles.stepContainer}>
+      <Text style={styles.stepTitle}>Contact Information</Text>
+      <Text style={styles.stepDescription}>
+        Please provide your contact information for verification purposes.
+      </Text>
+
+      <Input
+        label="Email Address *"
+        value={formData.email}
+        onChangeText={(text) => handleChange('email', text)}
+        placeholder="Enter your email address"
+        keyboardType="email-address"
+        autoCapitalize="none"
+      />
+
+      <Input
+        label="Phone Number"
+        value={formData.phone}
+        onChangeText={(text) => handleChange('phone', text)}
+        placeholder="Enter your phone number"
+        keyboardType="phone-pad"
+      />
+
+      <Input
+        label="Social Media Links"
+        value={formData.socialMediaLinks}
+        onChangeText={(text) => handleChange('socialMediaLinks', text)}
+        placeholder="Instagram, Twitter, etc. (one per line)"
+        multiline
+        numberOfLines={3}
+      />
+    </View>
+  );
+
+  // Render step 3: Verification Documents
+  const renderStep3 = () => (
+    <View style={styles.stepContainer}>
+      <Text style={styles.stepTitle}>Verification Documents</Text>
+      <Text style={styles.stepDescription}>
+        Please upload documents to verify your identity and athlete status.
+      </Text>
+
+      <Text style={styles.sectionTitle}>ID Verification *</Text>
+      <TouchableOpacity
+        style={[styles.uploadContainer, formData.idImage && styles.uploadContainerWithImage]}
+        onPress={() => pickImage('idImage')}
+      >
+        {formData.idImage ? (
+          <Image source={{ uri: formData.idImage }} style={styles.uploadedImage} />
+        ) : (
+          <>
+            <Ionicons name="id-card-outline" size={40} color={Colors.primary} />
+            <Text style={styles.uploadText}>Upload ID (Driver's License, Passport, etc.)</Text>
+          </>
+        )}
+      </TouchableOpacity>
+
+      <Text style={styles.sectionTitle}>Proof of Athlete Status *</Text>
+      <TouchableOpacity
+        style={[styles.uploadContainer, formData.proofImage && styles.uploadContainerWithImage]}
+        onPress={() => pickImage('proofImage')}
+      >
+        {formData.proofImage ? (
+          <Image source={{ uri: formData.proofImage }} style={styles.uploadedImage} />
+        ) : (
+          <>
+            <Ionicons name="document-text-outline" size={40} color={Colors.primary} />
+            <Text style={styles.uploadText}>Upload proof (Team roster, Sports ID, etc.)</Text>
+          </>
+        )}
+      </TouchableOpacity>
+    </View>
+  );
+
+  // Render step 4: Additional Documents
+  const renderStep4 = () => (
+    <View style={styles.stepContainer}>
+      <Text style={styles.stepTitle}>Additional Documents</Text>
+      <Text style={styles.stepDescription}>
+        You can upload additional documents to support your verification (optional).
+      </Text>
+
+      <TouchableOpacity style={styles.addDocumentButton} onPress={pickDocument}>
+        <Ionicons name="add-circle-outline" size={24} color={Colors.primary} />
+        <Text style={styles.addDocumentText}>Add Document</Text>
+      </TouchableOpacity>
+
+      {formData.additionalDocuments.length > 0 && (
+        <View style={styles.documentsList}>
+          {formData.additionalDocuments.map((doc, index) => (
+            <View key={index} style={styles.documentItem}>
+              <Ionicons name="document-outline" size={24} color={Colors.primary} />
+              <Text style={styles.documentName} numberOfLines={1}>
+                Document {index + 1}
+              </Text>
+              <TouchableOpacity
+                style={styles.removeButton}
+                onPress={() => removeDocument(index)}
+              >
+                <Ionicons name="close-circle" size={24} color={Colors.error} />
+              </TouchableOpacity>
+            </View>
+          ))}
+        </View>
+      )}
+
+      <View style={styles.termsContainer}>
+        <Text style={styles.termsText}>
+          By submitting this form, you confirm that all information provided is accurate and you agree to our Terms of Service and Privacy Policy.
+        </Text>
+      </View>
+    </View>
+  );
+
+  // Render the current step
+  const renderCurrentStep = () => {
+    switch (step) {
+      case 1:
+        return renderStep1();
+      case 2:
+        return renderStep2();
+      case 3:
+        return renderStep3();
+      case 4:
+        return renderStep4();
+      default:
+        return null;
     }
   };
 
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>Athlete Verification</Text>
-        <TouchableOpacity style={styles.closeButton} onPress={onCancel}>
-          <Ionicons name="close" size={24} color="#333" />
+        <TouchableOpacity onPress={prevStep} style={styles.backButton}>
+          <Ionicons name="arrow-back" size={24} color={Colors.primary} />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Athlete Verification</Text>
+        <TouchableOpacity onPress={onCancel} style={styles.closeButton}>
+          <Ionicons name="close" size={24} color={Colors.neutral600} />
         </TouchableOpacity>
       </View>
 
-      <ScrollView style={styles.scrollContainer} contentContainerStyle={styles.scrollContent}>
-        <Text style={styles.subtitle}>
-          Complete this form to verify your athlete status. This information will be reviewed by our team.
-        </Text>
-
-        <View style={styles.formSection}>
-          <Text style={styles.sectionTitle}>Personal Information</Text>
-
-          <Text style={styles.label}>Full Legal Name *</Text>
-          <TextInput
-            style={styles.input}
-            value={fullName}
-            onChangeText={setFullName}
-            placeholder="Enter your full legal name"
-            editable={!isLoading}
-          />
-
-          <Text style={styles.label}>Sport *</Text>
-          <TouchableOpacity
-            style={styles.input}
-            onPress={() => setIsSportModalVisible(true)}
-            disabled={isLoading}
+      <View style={styles.progressContainer}>
+        {[1, 2, 3, 4].map((s) => (
+          <View
+            key={s}
+            style={[
+              styles.progressStep,
+              s <= step ? styles.progressStepActive : styles.progressStepInactive,
+            ]}
           >
-            <Text style={sport ? styles.inputText : styles.placeholderText}>
-              {sport || 'Select Sport'}
-            </Text>
-          </TouchableOpacity>
-          <Modal
-            animationType="slide"
-            transparent={true}
-            visible={isSportModalVisible}
-            onRequestClose={() => setIsSportModalVisible(false)}
-          >
-            <View style={styles.modalContainer}>
-              <View style={styles.modalContent}>
-                <ScrollView>
-                  {sports.map((s) => (
-                    <TouchableOpacity
-                      key={s}
-                      style={styles.modalItem}
-                      onPress={() => {
-                        setSport(s);
-                        setIsSportModalVisible(false);
-                      }}
-                    >
-                      <Text style={styles.modalItemText}>{s}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
-                <TouchableOpacity
-                  style={styles.modalCloseButton}
-                  onPress={() => setIsSportModalVisible(false)}
-                >
-                  <Text style={styles.modalCloseButtonText}>Close</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </Modal>
-
-          <Text style={styles.label}>League/Association *</Text>
-          <TouchableOpacity
-            style={styles.input}
-            onPress={() => setIsLeagueModalVisible(true)}
-            disabled={isLoading}
-          >
-            <Text style={league ? styles.inputText : styles.placeholderText}>
-              {league || 'Select League/Association'}
-            </Text>
-          </TouchableOpacity>
-          <Modal
-            animationType="slide"
-            transparent={true}
-            visible={isLeagueModalVisible}
-            onRequestClose={() => setIsLeagueModalVisible(false)}
-          >
-            <View style={styles.modalContainer}>
-              <View style={styles.modalContent}>
-                <ScrollView>
-                  {leagues.map((l) => (
-                    <TouchableOpacity
-                      key={l}
-                      style={styles.modalItem}
-                      onPress={() => {
-                        setLeague(l);
-                        setIsLeagueModalVisible(false);
-                      }}
-                    >
-                      <Text style={styles.modalItemText}>{l}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
-                <TouchableOpacity
-                  style={styles.modalCloseButton}
-                  onPress={() => setIsLeagueModalVisible(false)}
-                >
-                  <Text style={styles.modalCloseButtonText}>Close</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </Modal>
-
-          <Text style={styles.label}>Team/Club *</Text>
-          <TextInput
-            style={styles.input}
-            value={team}
-            onChangeText={setTeam}
-            placeholder="e.g. Lakers, Chiefs, etc."
-            editable={!isLoading}
-          />
-        </View>
-
-        <View style={styles.formSection}>
-          <Text style={styles.sectionTitle}>Verification Documents</Text>
-
-          <Text style={styles.label}>Profile Photo *</Text>
-          <Text style={styles.helperText}>
-            Please upload a clear, recent photo of yourself that will be used for your verified profile.
-          </Text>
-
-          <TouchableOpacity
-            style={styles.uploadButton}
-            onPress={pickProfileImage}
-            disabled={isLoading}
-          >
-            {profilePhotoUri ? (
-              <Image source={{ uri: profilePhotoUri }} style={styles.previewImage} />
+            {s < step ? (
+              <Ionicons name="checkmark" size={16} color="white" />
             ) : (
-              <>
-                <AntDesign name="camerao" size={24} color={Colors.primary} />
-                <Text style={styles.uploadButtonText}>Upload Profile Photo</Text>
-              </>
+              <Text style={s === step ? styles.progressTextActive : styles.progressTextInactive}>
+                {s}
+              </Text>
             )}
-          </TouchableOpacity>
+          </View>
+        ))}
+        <View style={styles.progressLine} />
+      </View>
 
-          <Text style={styles.label}>ID Photo *</Text>
-          <Text style={styles.helperText}>
-            Please upload a photo of your official ID (driver's license, passport, etc.). This will not be publicly visible.
-          </Text>
-
-          <TouchableOpacity
-            style={styles.uploadButton}
-            onPress={pickIdImage}
-            disabled={isLoading}
-          >
-            {idPhotoUri ? (
-              <View style={styles.documentPreview}>
-                <Image source={{ uri: idPhotoUri }} style={styles.previewImage} />
-                <Text style={styles.documentPreviewText}>ID Photo Uploaded</Text>
-              </View>
-            ) : (
-              <>
-                <AntDesign name="idcard" size={24} color={Colors.primary} />
-                <Text style={styles.uploadButtonText}>Upload ID Photo</Text>
-              </>
-            )}
-          </TouchableOpacity>
-
-          <Text style={styles.label}>Supporting Document (Optional)</Text>
-          <Text style={styles.helperText}>
-            Upload any additional document that proves your athlete status (contract, team roster, etc.).
-          </Text>
-          
-          <TouchableOpacity 
-            style={styles.uploadButton} 
-            onPress={pickDocument}
-            disabled={isLoading}
-          >
-            {documentUri ? (
-              <View style={styles.documentPreview}>
-                <AntDesign name="file1" size={24} color={Colors.primary} />
-                <Text style={styles.documentPreviewText}>{documentName || 'Document Uploaded'}</Text>
-              </View>
-            ) : (
-              <>
-                <AntDesign name="file1" size={24} color={Colors.primary} />
-                <Text style={styles.uploadButtonText}>Upload Supporting Document</Text>
-              </>
-            )}
-          </TouchableOpacity>
-
-                    <Text style={styles.label}>Team Roster Document (Optional)</Text>
-                    <Text style={styles.helperText}>
-                        Upload a copy of your team's official roster.
-                    </Text>
-                    <TouchableOpacity
-                        style={styles.uploadButton}
-                        onPress={pickTeamRoster}
-                        disabled={isLoading}
-                    >
-                        {teamRosterUri ? (
-                            <View style={styles.documentPreview}>
-                                <AntDesign name="file1" size={24} color={Colors.primary} />
-                                <Text style={styles.documentPreviewText}>{teamRosterName || 'Document Uploaded'}</Text>
-                            </View>
-                        ) : (
-                            <>
-                                <AntDesign name="file1" size={24} color={Colors.primary} />
-                                <Text style={styles.uploadButtonText}>Upload Team Roster</Text>
-                            </>
-                        )}
-                    </TouchableOpacity>
-
-                    <Text style={styles.label}>League Affiliation Proof (Optional)</Text>
-                    <Text style={styles.helperText}>
-                        Upload a document that proves your affiliation with the league (e.g., a letter from the league).
-                    </Text>
-                    <TouchableOpacity
-                        style={styles.uploadButton}
-                        onPress={pickLeagueAffiliation}
-                        disabled={isLoading}
-                    >
-                        {leagueAffiliationUri ? (
-                            <View style={styles.documentPreview}>
-                                <AntDesign name="file1" size={24} color={Colors.primary} />
-                                <Text style={styles.documentPreviewText}>{leagueAffiliationName || 'Document Uploaded'}</Text>
-                            </View>
-                        ) : (
-                            <>
-                                <AntDesign name="file1" size={24} color={Colors.primary} />
-                                <Text style={styles.uploadButtonText}>Upload League Affiliation Proof</Text>
-                            </>
-                        )}
-                    </TouchableOpacity>
-                </View>
-
-        <View style={styles.formSection}>
-          <Text style={styles.label}>Additional Information (Optional)</Text>
-          <Text style={styles.helperText}>
-            Provide any additional information that might help us verify your athlete status.
-          </Text>
-          <TextInput
-            style={[styles.input, styles.textArea]}
-            value={additionalInfo}
-            onChangeText={setAdditionalInfo}
-            placeholder="Enter any additional information here..."
-            multiline
-            numberOfLines={4}
-            editable={!isLoading}
-          />
-        </View>
-
-        <View style={styles.privacyNote}>
-          <MaterialIcons name="privacy-tip" size={20} color="#666" style={styles.privacyIcon} />
-          <Text style={styles.privacyText}>
-            Your ID and verification documents will only be used for verification purposes and will not be publicly visible or shared with third parties.
-          </Text>
-        </View>
-
-        <View style={styles.buttonContainer}>
-          <TouchableOpacity
-            style={[styles.button, styles.cancelButton]}
-            onPress={onCancel}
-            disabled={isLoading}
-          >
-            <Text style={styles.cancelButtonText}>Cancel</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.button, styles.submitButton, isLoading && styles.disabledButton]}
-            onPress={handleSubmit}
-            disabled={isLoading}
-          >
-            {isLoading ? (
-              <ActivityIndicator size="small" color="white" />
-            ) : (
-              <Text style={styles.submitButtonText}>Submit for Verification</Text>
-            )}
-          </TouchableOpacity>
-        </View>
+      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+        {renderCurrentStep()}
       </ScrollView>
+
+      <View style={styles.footer}>
+        <Button
+          title={step < 4 ? 'Next' : 'Submit'}
+          onPress={nextStep}
+          loading={loading}
+          disabled={loading || !validateStep()}
+        />
+      </View>
     </View>
   );
 };
@@ -545,204 +437,185 @@ const AthleteVerificationForm: React.FC<AthleteVerificationFormProps> = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: 'white',
-    borderRadius: 12,
-    marginHorizontal: 20,
-    marginVertical: 40,
-    ...shadows.medium,
-    maxHeight: '90%',
-  },
-  modalContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-  },
-  modalContent: {
-    backgroundColor: 'white',
-    borderRadius: 10,
-    padding: 20,
-    width: '80%',
-    maxHeight: '80%',
-  },
-  modalItem: {
-    paddingVertical: 15,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
-  },
-  modalItemText: {
-    fontSize: 16,
-    color: '#333',
-  },
-  modalCloseButton: {
-    marginTop: 20,
-    backgroundColor: Colors.primary,
-    borderRadius: 5,
-    padding: 10,
-    alignItems: 'center',
-  },
-  modalCloseButtonText: {
-    color: 'white',
-    fontWeight: 'bold',
+    backgroundColor: Colors.light.background,
   },
   header: {
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    borderBottomColor: Colors.light.border,
   },
-  title: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: Colors.primary,
-  },
-  closeButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#f5f5f5',
-  },
-  scrollContainer: {
-    flex: 1,
-  },
-  scrollContent: {
-    padding: 20,
-    paddingBottom: 40,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: '#666',
-    marginBottom: 20,
-    lineHeight: 22,
-  },
-  formSection: {
-    marginBottom: 24,
-  },
-  sectionTitle: {
+  headerTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    marginBottom: 16,
-    color: '#333',
+    color: Colors.light.text,
   },
-    inputText: {
-        color: '#333', // Change to your desired text color
-        fontSize: 16,
-    },
-    placeholderText: {
-        color: '#999',
-        fontSize: 16,
-    },
-    label: {
-    fontSize: 16,
-    fontWeight: '500',
+  backButton: {
+    padding: 8,
+  },
+  closeButton: {
+    padding: 8,
+  },
+  progressContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 40,
+    paddingVertical: 16,
+    position: 'relative',
+  },
+  progressLine: {
+    position: 'absolute',
+    top: '50%',
+    left: 50,
+    right: 50,
+    height: 2,
+    backgroundColor: Colors.light.border,
+    zIndex: -1,
+  },
+  progressStep: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1,
+  },
+  progressStepActive: {
+    backgroundColor: Colors.primary,
+  },
+  progressStepInactive: {
+    backgroundColor: Colors.light.cardBackgroundLight,
+    borderWidth: 1,
+    borderColor: Colors.light.border,
+  },
+  progressTextActive: {
+    color: 'white',
+    fontWeight: 'bold',
+  },
+  progressTextInactive: {
+    color: Colors.light.textSecondary,
+  },
+  scrollView: {
+    flex: 1,
+  },
+  stepContainer: {
+    padding: 16,
+  },
+  stepTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
     marginBottom: 8,
-    color: '#333',
+    color: Colors.light.text,
   },
-  helperText: {
+  stepDescription: {
     fontSize: 14,
-    color: '#666',
-    marginBottom: 12,
+    color: Colors.light.textSecondary,
+    marginBottom: 24,
+    lineHeight: 20,
   },
-  input: {
-    backgroundColor: '#f5f5f5',
-    borderRadius: 8,
-    padding: 15,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginTop: 16,
+    marginBottom: 8,
+    color: Colors.light.text,
   },
-  textArea: {
-    minHeight: 100,
-    textAlignVertical: 'top',
-  },
-  uploadButton: {
-    backgroundColor: '#f5f5f5',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
+  uploadContainer: {
+    borderWidth: 2,
+    borderColor: Colors.light.border,
     borderStyle: 'dashed',
+    borderRadius: 12,
     padding: 20,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 16,
-    minHeight: 120,
+    backgroundColor: Colors.light.cardBackgroundLight,
+    height: 160,
   },
-  uploadButtonText: {
-    color: Colors.primary,
-    fontWeight: '500',
-    marginTop: 8,
+  uploadContainerWithImage: {
+    borderStyle: 'solid',
+    padding: 0,
+    overflow: 'hidden',
   },
-  previewImage: {
+  uploadText: {
+    marginTop: 12,
+    color: Colors.light.textSecondary,
+    textAlign: 'center',
+  },
+  uploadedImage: {
     width: '100%',
-    height: 150,
-    borderRadius: 8,
+    height: '100%',
     resizeMode: 'cover',
   },
-  documentPreview: {
-    width: '100%',
+  addDocumentButton: {
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    padding: 12,
+    backgroundColor: Colors.light.cardBackgroundLight,
+    borderRadius: 8,
+    marginBottom: 16,
   },
-  documentPreviewText: {
-    marginTop: 8,
-    color: '#333',
+  addDocumentText: {
+    marginLeft: 8,
+    color: Colors.primary,
     fontWeight: '500',
   },
-  privacyNote: {
+  documentsList: {
+    marginBottom: 16,
+  },
+  documentItem: {
     flexDirection: 'row',
-    backgroundColor: '#f9f9f9',
-    padding: 16,
-    borderRadius: 8,
-    marginBottom: 24,
-  },
-  privacyIcon: {
-    marginRight: 10,
-    marginTop: 2,
-  },
-  privacyText: {
-    flex: 1,
-    fontSize: 14,
-    color: '#666',
-    lineHeight: 20,
-  },
-  buttonContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  button: {
-    borderRadius: 8,
-    paddingVertical: 12,
-    paddingHorizontal: 20,
     alignItems: 'center',
-    justifyContent: 'center',
-    minWidth: 120,
+    backgroundColor: Colors.light.cardBackground,
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
   },
-  submitButton: {
-    backgroundColor: Colors.primary,
-    flex: 2,
-    marginLeft: 10,
-  },
-  cancelButton: {
-    backgroundColor: '#f5f5f5',
-    borderWidth: 1,
-    borderColor: '#ddd',
+  documentName: {
     flex: 1,
+    marginLeft: 12,
+    color: Colors.light.text,
   },
-  submitButtonText: {
-    color: 'white',
-    fontWeight: 'bold',
-    fontSize: 16,
+  removeButton: {
+    padding: 4,
   },
-  cancelButtonText: {
-    color: '#333',
-    fontSize: 16,
+  termsContainer: {
+    marginTop: 16,
+    padding: 16,
+    backgroundColor: Colors.light.cardBackgroundLight,
+    borderRadius: 8,
   },
-  disabledButton: {
-    backgroundColor: '#a0c4ff',
+  termsText: {
+    fontSize: 12,
+    color: Colors.light.textSecondary,
+    lineHeight: 18,
+  },
+  footer: {
+    padding: 16,
+    borderTopWidth: 1,
+    borderTopColor: Colors.light.border,
+    backgroundColor: Colors.light.cardBackground,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: -2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 2,
+      },
+      android: {
+        elevation: 4,
+      },
+    }),
   },
 });
 
