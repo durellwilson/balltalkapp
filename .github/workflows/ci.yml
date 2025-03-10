@@ -1,10 +1,9 @@
 name: BallTalk CI
-
 on:
   push:
-    branches: [ main, develop ]
+    branches: [main, develop]
   pull_request:
-    branches: [ main, develop ]
+    branches: [main, develop]
 
 jobs:
   test:
@@ -13,13 +12,13 @@ jobs:
     
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       
       - name: Setup Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
-          node-version: '18'
-          cache: 'npm'
+          node-version: '20'
+          cache: 'pnpm'
       
       - name: Install dependencies
         run: npm ci
@@ -45,13 +44,13 @@ jobs:
     
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       
       - name: Setup Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
-          node-version: '18'
-          cache: 'npm'
+          node-version: '20'
+          cache: 'pnpm'
       
       - name: Install dependencies
         run: npm ci
@@ -191,3 +190,33 @@ jobs:
         run: eas build --platform ios --profile production --non-interactive
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+
+  validation:
+    name: Quality Gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          cache: 'npm'
+      - run: npm ci
+      - name: Security Audit
+        run: npm audit --audit-level=critical
+      - name: Type Check
+        run: npx tsc --noEmit --skipLibCheck
+      - name: Lint
+        run: npx eslint . --max-warnings=0
+      - name: Test
+        run: |
+          npm run test:ci
+          npx jest-coverage-badges --output ./coverage/badges/
+      - name: Expo Validation
+        run: npx expo-doctor
+      - name: Sentry Check
+        if: github.ref == 'refs/heads/main'
+        run: |
+          if [ -z "$EXPO_PUBLIC_SENTRY_DSN" ]; then
+            echo "SENTRY_DSN missing in production build"
+            exit 1
+          fi
